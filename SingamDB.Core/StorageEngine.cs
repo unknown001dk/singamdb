@@ -1,15 +1,41 @@
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace SingamDB.Core;
+
+public class CollectionSchemaMeta
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("dbName")]
+    public string DbName { get; set; } = string.Empty;
+
+    [JsonPropertyName("createdAt")]
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    [JsonPropertyName("documentCount")]
+    public int DocumentCount { get; set; }
+
+    [JsonPropertyName("dataSegmentPages")]
+    public uint DataSegmentPages { get; set; }
+
+    [JsonPropertyName("indexes")]
+    public List<string> IndexedFields { get; set; } = new();
+
+    [JsonPropertyName("bTreeIndexes")]
+    public List<string> BTreeIndexedFields { get; set; } = new();
+
+    [JsonPropertyName("compositeIndexes")]
+    public List<string> CompositeIndexes { get; set; } = new();
+}
 
 public class StorageEngine
 {
     private readonly string basePath;
     private readonly bool enableWal;
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true
-    };
+    private static readonly object fileLock = new();
 
     public StorageEngine(string basePath = "singam_data", bool enableWal = true)
     {
@@ -21,123 +47,192 @@ public class StorageEngine
         }
     }
 
-    private string GetDatabaseDir(string dbName)
+    public string GetCollectionBaseDir(string dbName, string collectionName)
     {
-        var path = Path.Combine(basePath, dbName);
-        if (!Directory.Exists(path))
-        {
-            Directory.CreateDirectory(path);
-        }
-        return path;
+        return Path.Combine(basePath, dbName, collectionName);
     }
 
-    private string GetCollectionFile(string dbName, string collectionName)
+    public string GetDataDir(string dbName, string collectionName)
     {
-        return Path.Combine(GetDatabaseDir(dbName), $"{collectionName}.json");
+        var dir = Path.Combine(GetCollectionBaseDir(dbName, collectionName), "data");
+        if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+        return dir;
     }
 
-    private string GetMetaFile(string dbName, string collectionName)
+    public string GetIndexDir(string dbName, string collectionName)
     {
-        return Path.Combine(GetDatabaseDir(dbName), $"{collectionName}.meta.json");
+        var dir = Path.Combine(GetCollectionBaseDir(dbName, collectionName), "indexes");
+        if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    public string GetWalDir(string dbName, string collectionName)
+    {
+        var dir = Path.Combine(GetCollectionBaseDir(dbName, collectionName), "wal");
+        if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    public string GetMetadataDir(string dbName, string collectionName)
+    {
+        var dir = Path.Combine(GetCollectionBaseDir(dbName, collectionName), "metadata");
+        if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    public string GetPrimaryDataFile(string dbName, string collectionName)
+    {
+        return Path.Combine(GetDataDir(dbName, collectionName), "000001.bin");
     }
 
     public string GetWalFile(string dbName, string collectionName)
     {
-        return Path.Combine(GetDatabaseDir(dbName), $"{collectionName}.wal");
+        return Path.Combine(GetWalDir(dbName, collectionName), "000001.wal");
     }
 
-    private static readonly object fileLock = new();
+    public string GetSchemaMetaFile(string dbName, string collectionName)
+    {
+        return Path.Combine(GetMetadataDir(dbName, collectionName), "schema.meta");
+    }
 
     public void SaveCollection(string dbName, Collection collection)
     {
         lock (fileLock)
         {
-            var filePath = GetCollectionFile(dbName, collection.Name);
-            var metaPath = GetMetaFile(dbName, collection.Name);
-            var walPath = GetWalFile(dbName, collection.Name);
-            var tempFile = $"{filePath}.tmp.{Guid.NewGuid():N}";
+            var dataFile = GetPrimaryDataFile(dbName, collection.Name);
+            var metaFile = GetSchemaMetaFile(dbName, collection.Name);
+            var tempBinFile = $"{dataFile}.tmp.{Guid.NewGuid():N}";
 
             var docs = collection.GetAll(limit: int.MaxValue);
-            var json = JsonSerializer.Serialize(docs, JsonOptions);
 
-            try
+            // 1. Write all documents into Binary 4KB Slotted Pages
+            using (var pageMgr = new SlottedPageManager(tempBinFile))
             {
-                // Atomic snapshot write
-                File.WriteAllText(tempFile, json);
-                File.Move(tempFile, filePath, overwrite: true);
+                var currentPage = pageMgr.AllocateNewPage();
 
-                // Save index metadata
-                var meta = new CollectionMetadata
+                foreach (var doc in docs)
                 {
-                    Indexes = collection.GetIndexes().ToList()
-                };
-                File.WriteAllText(metaPath, JsonSerializer.Serialize(meta, JsonOptions));
+                    var json = JsonSerializer.Serialize(doc);
+                    var bytes = Encoding.UTF8.GetBytes(json);
 
-                // Checkpoint: truncate WAL since state is safely stored in snapshot
-                if (File.Exists(walPath))
-                {
-                    try { File.WriteAllText(walPath, string.Empty); } catch { }
+                    if (!currentPage.TryInsertRecord(bytes, out _))
+                    {
+                        // Page full: allocate next 4KB page and link
+                        var nextPage = pageMgr.AllocateNewPage();
+                        currentPage.NextPageId = nextPage.PageId;
+                        pageMgr.FlushPage(currentPage);
+                        currentPage = nextPage;
+                        currentPage.TryInsertRecord(bytes, out _);
+                    }
                 }
+
+                pageMgr.FlushPage(currentPage);
+                pageMgr.FlushAll();
             }
-            finally
+
+            // Atomic move to production data segment
+            File.Move(tempBinFile, dataFile, overwrite: true);
+
+            // 2. Write schema and index metadata
+            var schema = new CollectionSchemaMeta
             {
-                if (File.Exists(tempFile))
-                {
-                    try { File.Delete(tempFile); } catch { }
-                }
-            }
+                Name = collection.Name,
+                DbName = dbName,
+                DocumentCount = docs.Count,
+                IndexedFields = collection.GetIndexes().ToList(),
+                BTreeIndexedFields = collection.GetBTreeIndexes().ToList(),
+                CompositeIndexes = collection.GetCompositeIndexes().ToList()
+            };
+
+            var metaJson = JsonSerializer.Serialize(schema, new JsonSerializerOptions { WriteIndented = true });
+            var tempMetaFile = $"{metaFile}.tmp.{Guid.NewGuid():N}";
+            File.WriteAllText(tempMetaFile, metaJson);
+            File.Move(tempMetaFile, metaFile, overwrite: true);
         }
     }
 
     public Collection LoadCollection(string dbName, string collectionName)
     {
-        var walPath = GetWalFile(dbName, collectionName);
-        var walEngine = enableWal ? new WalEngine(walPath, syncFsync: false) : null;
-        var collection = new Collection(collectionName, walEngine);
+        var dataFile = GetPrimaryDataFile(dbName, collectionName);
+        var metaFile = GetSchemaMetaFile(dbName, collectionName);
+        var walFile = GetWalFile(dbName, collectionName);
 
-        var filePath = GetCollectionFile(dbName, collectionName);
-        var metaPath = GetMetaFile(dbName, collectionName);
+        WalEngine? wal = null;
+        if (enableWal)
+        {
+            wal = new WalEngine(walFile);
+        }
 
-        // 1. Load Indexes
-        if (File.Exists(metaPath))
+        var collection = new Collection(collectionName, wal);
+
+        // 1. Load Indexes from Metadata
+        if (File.Exists(metaFile))
         {
             try
             {
-                var metaJson = File.ReadAllText(metaPath);
-                var meta = JsonSerializer.Deserialize<CollectionMetadata>(metaJson);
-                if (meta?.Indexes != null)
+                var metaJson = File.ReadAllText(metaFile);
+                var meta = JsonSerializer.Deserialize<CollectionSchemaMeta>(metaJson);
+                if (meta != null)
                 {
-                    foreach (var idx in meta.Indexes)
+                    foreach (var f in meta.IndexedFields) collection.CreateIndex(f);
+                    foreach (var bf in meta.BTreeIndexedFields) collection.CreateBTreeIndex(bf);
+                    foreach (var cf in meta.CompositeIndexes)
                     {
-                        collection.CreateIndex(idx);
+                        var parts = cf.Split('_');
+                        collection.CreateCompositeIndex(parts);
                     }
                 }
             }
             catch { }
         }
 
-        // 2. Load Snapshot
-        if (File.Exists(filePath))
+        // 2. Load Documents from 4KB Binary Slotted Pages
+        if (File.Exists(dataFile))
         {
             try
             {
-                var json = File.ReadAllText(filePath);
-                var docs = JsonSerializer.Deserialize<List<Document>>(json);
-                if (docs != null)
+                using var pageMgr = new SlottedPageManager(dataFile);
+                uint totalPages = pageMgr.GetTotalPages();
+                for (uint p = 0; p < totalPages; p++)
                 {
-                    foreach (var doc in docs)
+                    var page = pageMgr.GetPage(p);
+                    var records = page.GetAllRecords();
+                    foreach (var recBytes in records)
                     {
-                        collection.Insert(doc);
+                        var docJson = Encoding.UTF8.GetString(recBytes);
+                        var doc = JsonSerializer.Deserialize<Document>(docJson);
+                        if (doc != null)
+                        {
+                            collection.Insert(doc);
+                        }
                     }
                 }
             }
             catch { }
         }
-
-        // 3. Replay WAL entries with CRC32 & Torn-Write Protection (Crash Recovery)
-        if (File.Exists(walPath))
+        else
         {
-            var replayResult = WalEngine.ReadAndValidate(walPath);
+            // Backward compatibility check for legacy .json snapshot
+            var legacyJsonPath = Path.Combine(basePath, dbName, $"{collectionName}.json");
+            if (File.Exists(legacyJsonPath))
+            {
+                try
+                {
+                    var legacyJson = File.ReadAllText(legacyJsonPath);
+                    var docs = JsonSerializer.Deserialize<List<Document>>(legacyJson);
+                    if (docs != null)
+                    {
+                        foreach (var d in docs) collection.Insert(d);
+                    }
+                }
+                catch { }
+            }
+        }
+
+        // 3. Replay WAL with CRC32 validation (Crash Recovery)
+        if (File.Exists(walFile))
+        {
+            var replayResult = WalEngine.ReadAndValidate(walFile);
             foreach (var entry in replayResult.Entries)
             {
                 collection.ReplayWalEntry(entry);
@@ -149,6 +244,8 @@ public class StorageEngine
 
     public List<string> ListDatabases()
     {
+        if (!Directory.Exists(basePath)) return new List<string>();
+
         return Directory.GetDirectories(basePath)
             .Select(Path.GetFileName)
             .Where(s => !string.IsNullOrEmpty(s))
@@ -160,53 +257,68 @@ public class StorageEngine
         var dbDir = Path.Combine(basePath, dbName);
         if (!Directory.Exists(dbDir)) return new List<string>();
 
-        var jsonFiles = Directory.GetFiles(dbDir, "*.json")
-            .Where(f => !f.EndsWith(".meta.json") && !f.EndsWith(".tmp"));
-        var walFiles = Directory.GetFiles(dbDir, "*.wal")
-            .Where(f => !f.EndsWith(".tmp"));
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        return jsonFiles.Concat(walFiles)
-            .Select(f => Path.GetFileNameWithoutExtension(f))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
+        // Scan for segmented directories: singam_data/{db}/{coll}/
+        foreach (var dir in Directory.GetDirectories(dbDir))
+        {
+            var name = Path.GetFileName(dir);
+            if (!string.IsNullOrEmpty(name) && !name.StartsWith("."))
+            {
+                result.Add(name);
+            }
+        }
 
-    public bool DropCollection(string dbName, string collectionName)
-    {
-        var file = GetCollectionFile(dbName, collectionName);
-        var meta = GetMetaFile(dbName, collectionName);
-        var wal = GetWalFile(dbName, collectionName);
+        // Backward compatibility: Scan for legacy .json or .wal files
+        foreach (var file in Directory.GetFiles(dbDir))
+        {
+            var ext = Path.GetExtension(file).ToLowerInvariant();
+            if (ext is ".json" or ".wal")
+            {
+                var name = Path.GetFileNameWithoutExtension(file);
+                if (!string.IsNullOrEmpty(name) && !name.EndsWith(".meta"))
+                {
+                    result.Add(name);
+                }
+            }
+        }
 
-        bool deleted = false;
-        if (File.Exists(file))
-        {
-            File.Delete(file);
-            deleted = true;
-        }
-        if (File.Exists(meta))
-        {
-            File.Delete(meta);
-        }
-        if (File.Exists(wal))
-        {
-            File.Delete(wal);
-        }
-        return deleted;
+        return result.ToList();
     }
 
     public bool DropDatabase(string dbName)
     {
-        var dir = Path.Combine(basePath, dbName);
-        if (Directory.Exists(dir))
+        lock (fileLock)
         {
-            Directory.Delete(dir, recursive: true);
-            return true;
+            var path = Path.Combine(basePath, dbName);
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+                return true;
+            }
+            return false;
         }
-        return false;
     }
-}
 
-public class CollectionMetadata
-{
-    public List<string> Indexes { get; set; } = new();
+    public bool DropCollection(string dbName, string collectionName)
+    {
+        lock (fileLock)
+        {
+            bool removed = false;
+            var collDir = GetCollectionBaseDir(dbName, collectionName);
+            if (Directory.Exists(collDir))
+            {
+                Directory.Delete(collDir, recursive: true);
+                removed = true;
+            }
+
+            // Also clean legacy files if any
+            var legacyJson = Path.Combine(basePath, dbName, $"{collectionName}.json");
+            var legacyWal = Path.Combine(basePath, dbName, $"{collectionName}.wal");
+            if (File.Exists(legacyJson)) { File.Delete(legacyJson); removed = true; }
+            if (File.Exists(legacyWal)) { File.Delete(legacyWal); removed = true; }
+
+            return removed;
+        }
+    }
 }

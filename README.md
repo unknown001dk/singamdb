@@ -48,6 +48,29 @@
 
 ---
 
+## Production Segmented Storage Architecture
+
+SingamDB stores database files in a partitioned directory layout:
+
+```text
+singam_data/
+└── <database_name>/
+    └── <collection_name>/
+        ├── data/
+        │   ├── 000001.bin           <-- 4KB Binary Slotted Block Pages
+        │   └── ...
+        ├── indexes/
+        │   ├── rank.idx             <-- B-Tree / Hash Index Segments
+        │   └── ...
+        ├── wal/
+        │   ├── 000001.wal           <-- Append-Only CRC32 Transaction Log
+        │   └── ...
+        └── metadata/
+            └── schema.meta          <-- Collection Metadata & Schema Definition
+```
+
+---
+
 ## Benchmark & Verification Results
 
 ### 1. In-Memory Index Scaling Benchmark

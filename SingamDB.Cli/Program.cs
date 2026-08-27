@@ -3,7 +3,7 @@ using System.Text.Json;
 
 var serverUrl = args.Length > 0 ? args[0] : "http://localhost:7777";
 var currentDb = "default";
-var currentCollection = "users";
+string? currentCollection = null;
 
 using var client = new HttpClient();
 client.BaseAddress = new Uri(serverUrl);
@@ -40,7 +40,8 @@ Console.WriteLine("Type 'help' for command list, 'exit' to quit.\n");
 while (true)
 {
     Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.Write($"singam [{currentDb}.{currentCollection}]> ");
+    string promptLocation = string.IsNullOrEmpty(currentCollection) ? currentDb : $"{currentDb}.{currentCollection}";
+    Console.Write($"singam [{promptLocation}]> ");
     Console.ResetColor();
 
     var input = Console.ReadLine();
@@ -79,7 +80,7 @@ while (true)
                     Console.WriteLine("\nDatabases:");
                     foreach (var db in dbs ?? new())
                     {
-                        Console.WriteLine($"  * {db} {(db == currentDb ? "(current)" : "")}");
+                        Console.WriteLine($"  * {db} {(db.Equals(currentDb, StringComparison.OrdinalIgnoreCase) ? "(current)" : "")}");
                     }
                     Console.WriteLine();
                 }
@@ -87,9 +88,16 @@ while (true)
                 {
                     var colls = await client.GetFromJsonAsync<List<string>>($"/api/databases/{currentDb}/collections");
                     Console.WriteLine($"\nCollections in '{currentDb}':");
-                    foreach (var c in colls ?? new())
+                    if (colls == null || colls.Count == 0)
                     {
-                        Console.WriteLine($"  * {c} {(c == currentCollection ? "(active)" : "")}");
+                        Console.WriteLine("  (No collections exist in this database. Use 'COLL <name>' to select/create one.)");
+                    }
+                    else
+                    {
+                        foreach (var c in colls)
+                        {
+                            Console.WriteLine($"  * {c} {(c.Equals(currentCollection, StringComparison.OrdinalIgnoreCase) ? "(active)" : "")}");
+                        }
                     }
                     Console.WriteLine();
                 }
@@ -107,6 +115,7 @@ while (true)
                 else
                 {
                     currentDb = param;
+                    currentCollection = null; // Reset collection when switching database
                     await client.PostAsync($"/api/databases/{currentDb}", null);
                     Console.WriteLine($"Switched to database: '{currentDb}'");
                 }
@@ -116,7 +125,7 @@ while (true)
             case "COLLECTION":
                 if (string.IsNullOrWhiteSpace(param))
                 {
-                    Console.WriteLine("Usage: COLLECTION <collection_name>");
+                    Console.WriteLine("Usage: COLL <collection_name>");
                 }
                 else
                 {
@@ -127,6 +136,11 @@ while (true)
                 break;
 
             case "INSERT":
+                if (string.IsNullOrWhiteSpace(currentCollection))
+                {
+                    Console.WriteLine("[!] No active collection. Use 'COLL <collection_name>' first.");
+                    break;
+                }
                 if (string.IsNullOrWhiteSpace(param))
                 {
                     Console.WriteLine("Usage: INSERT {\"name\": \"Alice\", \"age\": 30}");
@@ -154,6 +168,11 @@ while (true)
 
             case "FIND":
             case "ALL":
+                if (string.IsNullOrWhiteSpace(currentCollection))
+                {
+                    Console.WriteLine("[!] No active collection. Use 'COLL <collection_name>' first.");
+                    break;
+                }
                 if (string.IsNullOrWhiteSpace(param) || param.Equals("ALL", StringComparison.OrdinalIgnoreCase))
                 {
                     var allDocs = await client.GetFromJsonAsync<List<JsonElement>>($"/api/databases/{currentDb}/collections/{currentCollection}/documents");
@@ -176,6 +195,11 @@ while (true)
                 break;
 
             case "GET":
+                if (string.IsNullOrWhiteSpace(currentCollection))
+                {
+                    Console.WriteLine("[!] No active collection. Use 'COLL <collection_name>' first.");
+                    break;
+                }
                 if (string.IsNullOrWhiteSpace(param))
                 {
                     Console.WriteLine("Usage: GET <document_id>");
@@ -195,6 +219,11 @@ while (true)
                 break;
 
             case "UPDATE":
+                if (string.IsNullOrWhiteSpace(currentCollection))
+                {
+                    Console.WriteLine("[!] No active collection. Use 'COLL <collection_name>' first.");
+                    break;
+                }
                 var updateParts = param.Split(' ', 2);
                 if (updateParts.Length < 2)
                 {
@@ -217,6 +246,11 @@ while (true)
 
             case "DELETE":
             case "DEL":
+                if (string.IsNullOrWhiteSpace(currentCollection))
+                {
+                    Console.WriteLine("[!] No active collection. Use 'COLL <collection_name>' first.");
+                    break;
+                }
                 if (string.IsNullOrWhiteSpace(param))
                 {
                     Console.WriteLine("Usage: DELETE <document_id>");
@@ -235,6 +269,11 @@ while (true)
                 break;
 
             case "EXPLAIN":
+                if (string.IsNullOrWhiteSpace(currentCollection))
+                {
+                    Console.WriteLine("[!] No active collection. Use 'COLL <collection_name>' first.");
+                    break;
+                }
                 string queryStr = param;
                 if (queryStr.StartsWith("FIND ", StringComparison.OrdinalIgnoreCase))
                 {
@@ -259,6 +298,11 @@ while (true)
                 break;
 
             case "INDEX":
+                if (string.IsNullOrWhiteSpace(currentCollection))
+                {
+                    Console.WriteLine("[!] No active collection. Use 'COLL <collection_name>' first.");
+                    break;
+                }
                 if (string.IsNullOrWhiteSpace(param))
                 {
                     Console.WriteLine("Usage: INDEX <field_name>");
@@ -277,6 +321,11 @@ while (true)
                 break;
 
             case "STATS":
+                if (string.IsNullOrWhiteSpace(currentCollection))
+                {
+                    Console.WriteLine("[!] No active collection. Use 'COLL <collection_name>' first.");
+                    break;
+                }
                 var statsResp = await client.GetAsync($"/api/databases/{currentDb}/collections/{currentCollection}/stats");
                 if (statsResp.IsSuccessStatusCode)
                 {
@@ -313,7 +362,7 @@ static void PrintCliHeader()
                  |___/                             
 ");
     Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine("  SingamDB Interactive Shell v1.0.0");
+    Console.WriteLine("  SingamDB Interactive Shell v3.0.0");
     Console.WriteLine("===================================================\n");
     Console.ResetColor();
 }
@@ -326,35 +375,33 @@ Available Commands:
   SHOW DBS                     List all databases
   USE <db_name>                Switch active database (e.g. USE production)
   SHOW COLLECTIONS             List all collections in active database
-  COLLECTION <coll_name>       Switch active collection (e.g. COLL users)
+  COLL <coll_name>             Switch or create active collection (e.g. COLL cops)
   
-  INSERT <json>                Insert document (e.g. INSERT {""name"":""Raj"", ""role"":""Hero""})
-  FIND [json]                  Query documents (e.g. FIND or FIND {""role"":""Hero""})
+  INSERT <json>                Insert document (e.g. INSERT {""name"":""Raj"", ""age"":30})
+  FIND [json]                  Query documents (e.g. FIND or FIND {""age"":{""$gt"":25}})
   GET <id>                     Fetch document by ID via Primary Index
   UPDATE <id> <json>           Update document by ID
   DELETE <id>                  Delete document by ID
   
   EXPLAIN FIND <json>          Explain query plan (FULL_SCAN vs INDEX_SCAN)
-  INDEX <field>                Create secondary index on field for instant lookup
+  INDEX <field>                Create secondary index on field
   STATS                        Show current collection document count & indexes
-  
   CLEAR                        Clear terminal screen
-  EXIT / QUIT                  Exit the shell
+  EXIT                         Close shell
 ----------------------------------------------------------------------
 ");
 }
 
-static void PrintPrettyJson(string rawJson)
+static void PrintPrettyJson(string json)
 {
     try
     {
-        using var jdoc = JsonDocument.Parse(rawJson);
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine(JsonSerializer.Serialize(jdoc, new JsonSerializerOptions { WriteIndented = true }));
-        Console.ResetColor();
+        using var doc = JsonDocument.Parse(json);
+        var formatted = JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        Console.WriteLine(formatted);
     }
     catch
     {
-        Console.WriteLine(rawJson);
+        Console.WriteLine(json);
     }
 }
