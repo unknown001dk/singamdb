@@ -515,7 +515,11 @@ public class Collection : IDisposable
 
             mvccChains.AddOrUpdate(id,
                 _ => new MvccVersion(txId > 0 ? txId : 1, doc.Data),
-                (_, prev) => new MvccVersion(txId > 0 ? txId : 1, doc.Data, prev));
+                (_, prev) =>
+                {
+                    prev.DeletedTxId = txId > 0 ? txId : 1;
+                    return new MvccVersion(txId > 0 ? txId : 1, doc.Data, prev);
+                });
 
             walEngine?.Append(WalOpType.Update, id, doc.Data, txId);
             return doc;
@@ -562,6 +566,40 @@ public class Collection : IDisposable
         finally
         {
             syncLock.ExitReadLock();
+        }
+    }
+
+    public int PruneOldMvccVersions(long minActiveReadTimestamp)
+    {
+        syncLock.EnterWriteLock();
+        try
+        {
+            int purged = 0;
+            foreach (var (docId, head) in mvccChains)
+            {
+                var curr = head;
+                while (curr != null && curr.PrevVersion != null)
+                {
+                    if (curr.PrevVersion.CreatedTxId < minActiveReadTimestamp && 
+                       (curr.PrevVersion.DeletedTxId > 0 && curr.PrevVersion.DeletedTxId <= minActiveReadTimestamp))
+                    {
+                        var deadNode = curr.PrevVersion;
+                        while (deadNode != null)
+                        {
+                            purged++;
+                            deadNode = deadNode.PrevVersion;
+                        }
+                        curr.PrevVersion = null;
+                        break;
+                    }
+                    curr = curr.PrevVersion;
+                }
+            }
+            return purged;
+        }
+        finally
+        {
+            syncLock.ExitWriteLock();
         }
     }
 

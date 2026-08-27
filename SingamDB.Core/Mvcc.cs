@@ -54,6 +54,15 @@ public class TransactionManager
     private readonly ConcurrentDictionary<string, long> lastCommittedTxPerDoc = new(StringComparer.OrdinalIgnoreCase);
     private readonly object commitLock = new();
 
+    public long GetOldestActiveTransactionReadTimestamp()
+    {
+        if (activeTransactions.IsEmpty)
+        {
+            return Interlocked.Read(ref globalTxCounter);
+        }
+        return activeTransactions.Values.Min(t => t.ReadTimestamp);
+    }
+
     public Transaction BeginTransaction()
     {
         long txId = Interlocked.Increment(ref globalTxCounter);
