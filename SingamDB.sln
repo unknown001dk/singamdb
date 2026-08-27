@@ -1,0 +1,46 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SingamDB.Core", "SingamDB.Core\SingamDB.Core.csproj", "{4DC5523A-D29C-4226-AB64-FCD289D93516}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SingamDB.Server", "SingamDB.Server\SingamDB.Server.csproj", "{B9475B45-12E8-4DAE-927B-730FFFD20862}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SingamDB.Cli", "SingamDB.Cli\SingamDB.Cli.csproj", "{DE11A399-11F7-45E7-A675-694CC210F5AC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SingamDB.Benchmark", "SingamDB.Benchmark\SingamDB.Benchmark.csproj", "{FA5A0141-0EF6-4F0D-978B-21EE38CAE9CB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SingamDB.HttpBenchmark", "SingamDB.HttpBenchmark\SingamDB.HttpBenchmark.csproj", "{B1B77670-8F34-46A4-9728-78F0F8E3DC28}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4DC5523A-D29C-4226-AB64-FCD289D93516}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4DC5523A-D29C-4226-AB64-FCD289D93516}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4DC5523A-D29C-4226-AB64-FCD289D93516}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4DC5523A-D29C-4226-AB64-FCD289D93516}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B9475B45-12E8-4DAE-927B-730FFFD20862}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B9475B45-12E8-4DAE-927B-730FFFD20862}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B9475B45-12E8-4DAE-927B-730FFFD20862}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B9475B45-12E8-4DAE-927B-730FFFD20862}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DE11A399-11F7-45E7-A675-694CC210F5AC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DE11A399-11F7-45E7-A675-694CC210F5AC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DE11A399-11F7-45E7-A675-694CC210F5AC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DE11A399-11F7-45E7-A675-694CC210F5AC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FA5A0141-0EF6-4F0D-978B-21EE38CAE9CB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FA5A0141-0EF6-4F0D-978B-21EE38CAE9CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FA5A0141-0EF6-4F0D-978B-21EE38CAE9CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FA5A0141-0EF6-4F0D-978B-21EE38CAE9CB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B1B77670-8F34-46A4-9728-78F0F8E3DC28}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1B77670-8F34-46A4-9728-78F0F8E3DC28}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1B77670-8F34-46A4-9728-78F0F8E3DC28}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1B77670-8F34-46A4-9728-78F0F8E3DC28}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

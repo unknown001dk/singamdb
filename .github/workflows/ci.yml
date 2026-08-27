@@ -1,0 +1,31 @@
+name: SingamDB CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET 8
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore SingamDB.sln
+
+    - name: Build Solution
+      run: dotnet build SingamDB.sln -c Release --no-restore
+
+    - name: Run In-Memory Benchmark Suite
+      run: dotnet run --project SingamDB.Benchmark -c Release --no-build
+
+    - name: Run Systems & Chaos Invariant Test Suite
+      run: dotnet run --project SingamDB.HttpBenchmark -c Release --no-build

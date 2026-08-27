@@ -1,0 +1,24 @@
+## .NET / C# standard ignores
+bin/
+obj/
+*.user
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/
+.idea/
+
+## SingamDB Data & Runtime Storage
+singam_data/
+*.wal
+*.bin
+*.tmp.*
+chaos_db_data/
+tx_test_data/
+test_slotted.bin
+test_buffer_pool.bin
+adversarial_wal_test.wal
+
+## OS files
+.DS_Store
+Thumbs.db
