@@ -13,6 +13,9 @@ public class IndexManager
     // Secondary B-Tree Range indexes: FieldName -> BTreeIndex
     private readonly ConcurrentDictionary<string, BTreeIndex> bTreeIndexes = new(StringComparer.OrdinalIgnoreCase);
 
+    // Composite Multi-Field Indexes: IndexName -> CompositeIndex
+    private readonly ConcurrentDictionary<string, CompositeIndex> compositeIndexes = new(StringComparer.OrdinalIgnoreCase);
+
     public void AddHashIndex(string fieldName)
     {
         secondaryHashIndexes.TryAdd(fieldName, new ConcurrentDictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase));
@@ -23,11 +26,18 @@ public class IndexManager
         bTreeIndexes.TryAdd(fieldName, new BTreeIndex(fieldName));
     }
 
+    public void AddCompositeIndex(params string[] fieldNames)
+    {
+        var comp = new CompositeIndex(fieldNames);
+        compositeIndexes.TryAdd(comp.IndexName, comp);
+    }
+
     public bool RemoveIndexField(string fieldName)
     {
         bool r1 = secondaryHashIndexes.TryRemove(fieldName, out _);
         bool r2 = bTreeIndexes.TryRemove(fieldName, out _);
-        return r1 || r2;
+        bool r3 = compositeIndexes.TryRemove(fieldName, out _);
+        return r1 || r2 || r3;
     }
 
     public bool HasIndex(string fieldName)
@@ -40,15 +50,35 @@ public class IndexManager
         return bTreeIndexes.ContainsKey(fieldName);
     }
 
-    public IEnumerable<string> GetIndexedFields()
+    public bool HasCompositeIndex(params string[] fieldNames)
     {
-        return secondaryHashIndexes.Keys.Concat(bTreeIndexes.Keys).Distinct(StringComparer.OrdinalIgnoreCase);
+        var name = string.Join("_", fieldNames);
+        return compositeIndexes.ContainsKey(name);
     }
 
-    public IEnumerable<string> GetBTreeIndexedFields()
+    public CompositeIndex? FindMatchingCompositeIndex(IEnumerable<string> fieldNames)
     {
-        return bTreeIndexes.Keys;
+        var set = new HashSet<string>(fieldNames, StringComparer.OrdinalIgnoreCase);
+        foreach (var comp in compositeIndexes.Values)
+        {
+            if (comp.FieldNames.All(f => set.Contains(f)))
+            {
+                return comp;
+            }
+        }
+        return null;
     }
+
+    public IEnumerable<string> GetIndexedFields()
+    {
+        return secondaryHashIndexes.Keys
+            .Concat(bTreeIndexes.Keys)
+            .Concat(compositeIndexes.Keys)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    public IEnumerable<string> GetBTreeIndexedFields() => bTreeIndexes.Keys;
+    public IEnumerable<string> GetCompositeIndexNames() => compositeIndexes.Keys;
 
     public void IndexDocument(Document doc)
     {
@@ -80,6 +110,12 @@ public class IndexManager
                 btree.Insert(rawVal.ToString() ?? "", doc.Id);
             }
         }
+
+        // 3. Update Composite Indexes
+        foreach (var compIndex in compositeIndexes.Values)
+        {
+            compIndex.Insert(doc);
+        }
     }
 
     public void RemoveDocument(Document doc)
@@ -109,6 +145,11 @@ public class IndexManager
             {
                 btree.Remove(rawVal.ToString() ?? "", doc.Id);
             }
+        }
+
+        foreach (var compIndex in compositeIndexes.Values)
+        {
+            compIndex.Remove(doc);
         }
     }
 
@@ -164,6 +205,19 @@ public class IndexManager
         }
     }
 
+    public IEnumerable<Document> SearchComposite(CompositeIndex comp, Dictionary<string, object> filter)
+    {
+        var values = comp.FieldNames.Select(f => filter[f]).ToArray();
+        var ids = comp.SearchExact(values);
+        foreach (var id in ids)
+        {
+            if (primaryIndex.TryGetValue(id, out var doc))
+            {
+                yield return doc;
+            }
+        }
+    }
+
     public void Clear()
     {
         primaryIndex.Clear();
@@ -172,5 +226,9 @@ public class IndexManager
             index.Clear();
         }
         bTreeIndexes.Clear();
+        foreach (var comp in compositeIndexes.Values)
+        {
+            comp.Clear();
+        }
     }
 }

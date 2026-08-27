@@ -52,6 +52,23 @@ public class Collection : IDisposable
 
     public void CreateBTreeIndex(string fieldName) => CreateIndex(fieldName, isBTree: true);
 
+    public void CreateCompositeIndex(params string[] fieldNames)
+    {
+        syncLock.EnterWriteLock();
+        try
+        {
+            indexManager.AddCompositeIndex(fieldNames);
+            foreach (var doc in documents)
+            {
+                indexManager.IndexDocument(doc);
+            }
+        }
+        finally
+        {
+            syncLock.ExitWriteLock();
+        }
+    }
+
     public bool DropIndex(string fieldName)
     {
         syncLock.EnterWriteLock();
@@ -67,6 +84,7 @@ public class Collection : IDisposable
 
     public IEnumerable<string> GetIndexes() => indexManager.GetIndexedFields();
     public IEnumerable<string> GetBTreeIndexes() => indexManager.GetBTreeIndexedFields();
+    public IEnumerable<string> GetCompositeIndexes() => indexManager.GetCompositeIndexNames();
 
     public Document Insert(Dictionary<string, object> data, string? customId = null, long txId = 0)
     {
@@ -78,7 +96,7 @@ public class Collection : IDisposable
     public void Insert(Document doc, long txId = 0)
     {
         // 1. Write-Ahead Log
-        walEngine?.Append(WalOpType.Insert, doc.Id, doc.Data);
+        walEngine?.Append(WalOpType.Insert, doc.Id, doc.Data, txId);
 
         syncLock.EnterWriteLock();
         try
@@ -238,13 +256,60 @@ public class Collection : IDisposable
         }).ToList();
     }
 
-    public List<Document> Query(Dictionary<string, object> filter, int limit = 100, int skip = 0)
+    public List<Document> Query(Dictionary<string, object> filter, string? sortField = null, bool ascending = true, List<string>? projectFields = null, int limit = 100, int skip = 0)
     {
         syncLock.EnterReadLock();
         try
         {
-            var candidates = ResolveFilterCandidates(filter, out _);
-            return candidates.Skip(skip).Take(limit).ToList();
+            var candidateSeq = ResolveFilterCandidates(filter, out _);
+
+            IPhysicalExecutor pipeline = new SeqScanExecutor(candidateSeq);
+
+            if (!string.IsNullOrWhiteSpace(sortField))
+            {
+                pipeline = new SortExecutor(pipeline, sortField, ascending);
+            }
+
+            if (projectFields != null && projectFields.Count > 0)
+            {
+                pipeline = new ProjectExecutor(pipeline, projectFields);
+            }
+
+            pipeline = new LimitSkipExecutor(pipeline, limit, skip);
+
+            var results = new List<Document>();
+            pipeline.Open();
+            try
+            {
+                Document? doc;
+                while ((doc = pipeline.Next()) != null)
+                {
+                    results.Add(doc);
+                }
+            }
+            finally
+            {
+                pipeline.Close();
+            }
+
+            return results;
+        }
+        finally
+        {
+            syncLock.ExitReadLock();
+        }
+    }
+
+    public List<AggregateResult> Aggregate(AggregateRequest request, Dictionary<string, object>? filter = null)
+    {
+        syncLock.EnterReadLock();
+        try
+        {
+            IEnumerable<Document> source = filter != null && filter.Count > 0
+                ? ResolveFilterCandidates(filter, out _)
+                : documents;
+
+            return AggregationPipeline.Execute(source, request);
         }
         finally
         {
@@ -257,7 +322,17 @@ public class Collection : IDisposable
         planInfo = new QueryExecutionPlan { Plan = "FULL_SCAN" };
         IEnumerable<Document> candidates = documents;
 
-        // 1. Check for Range / B-Tree filters
+        // 1. Check for Composite Index Match
+        var compIndex = indexManager.FindMatchingCompositeIndex(filter.Keys);
+        if (compIndex != null)
+        {
+            candidates = indexManager.SearchComposite(compIndex, filter);
+            planInfo.Plan = "COMPOSITE_INDEX_SCAN";
+            planInfo.Index = compIndex.IndexName;
+            return candidates;
+        }
+
+        // 2. Check for Range / B-Tree or Hash filters
         foreach (var (key, value) in filter)
         {
             var parsedRange = ParseRangeFilter(value);
@@ -370,7 +445,7 @@ public class Collection : IDisposable
         };
     }
 
-    public ExplainResult ExplainQuery(Dictionary<string, object> filter, int limit = 100, int skip = 0)
+    public ExplainResult ExplainQuery(Dictionary<string, object> filter, string? sortField = null, List<string>? projectFields = null, int limit = 100, int skip = 0)
     {
         syncLock.EnterReadLock();
         try
@@ -385,11 +460,16 @@ public class Collection : IDisposable
                 ? Math.Round(documents.Count * 1.0, 2)
                 : Math.Round(1.0 + (candidates.Count * 0.05), 2);
 
+            var pipelineSteps = new List<string> { planInfo.Plan };
+            if (!string.IsNullOrWhiteSpace(sortField)) pipelineSteps.Add($"SORT({sortField})");
+            if (projectFields != null && projectFields.Count > 0) pipelineSteps.Add($"PROJECT({string.Join(",", projectFields)})");
+            pipelineSteps.Add($"LIMIT({limit})");
+
             return new ExplainResult
             {
                 Operation = "FIND",
                 Filter = filter,
-                Plan = planInfo.Plan,
+                Plan = string.Join(" -> ", pipelineSteps),
                 Index = planInfo.Index,
                 EstimatedCost = cost,
                 DocumentsExamined = planInfo.Plan == "FULL_SCAN" ? documents.Count : candidates.Count,
@@ -418,12 +498,16 @@ public class Collection : IDisposable
             {
                 foreach (var (k, v) in updatedData)
                 {
-                    doc.Data[k] = v;
+                    doc.Data[k] = Document.NormalizeJsonValue(v) ?? "";
                 }
             }
             else
             {
-                doc.Data = new Dictionary<string, object>(updatedData, StringComparer.OrdinalIgnoreCase);
+                doc.Data = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                foreach (var (k, v) in updatedData)
+                {
+                    doc.Data[k] = Document.NormalizeJsonValue(v) ?? "";
+                }
             }
 
             doc.UpdatedAt = DateTime.UtcNow;
@@ -433,7 +517,7 @@ public class Collection : IDisposable
                 _ => new MvccVersion(txId > 0 ? txId : 1, doc.Data),
                 (_, prev) => new MvccVersion(txId > 0 ? txId : 1, doc.Data, prev));
 
-            walEngine?.Append(WalOpType.Update, id, doc.Data);
+            walEngine?.Append(WalOpType.Update, id, doc.Data, txId);
             return doc;
         }
         finally
@@ -444,7 +528,7 @@ public class Collection : IDisposable
 
     public bool Delete(string id, long txId = 0)
     {
-        walEngine?.Append(WalOpType.Delete, id);
+        walEngine?.Append(WalOpType.Delete, id, txId: txId);
 
         syncLock.EnterWriteLock();
         try
@@ -491,7 +575,8 @@ public class Collection : IDisposable
                 Name = Name,
                 DocumentCount = documents.Count,
                 IndexedFields = indexManager.GetIndexedFields().ToList(),
-                BTreeIndexedFields = indexManager.GetBTreeIndexedFields().ToList()
+                BTreeIndexedFields = indexManager.GetBTreeIndexedFields().ToList(),
+                CompositeIndexes = indexManager.GetCompositeIndexNames().ToList()
             };
         }
         finally
@@ -533,6 +618,7 @@ public class CollectionStats
     public int DocumentCount { get; set; }
     public List<string> IndexedFields { get; set; } = new();
     public List<string> BTreeIndexedFields { get; set; } = new();
+    public List<string> CompositeIndexes { get; set; } = new();
 }
 
 public class ExplainResult

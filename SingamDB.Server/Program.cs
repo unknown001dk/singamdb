@@ -14,8 +14,10 @@ builder.Logging.AddFilter("System", LogLevel.Warning);
 var dataPath = Path.Combine(Directory.GetCurrentDirectory(), "singam_data");
 var engine = new DatabaseEngine(dataPath);
 var txManager = new TransactionManager();
+var checkpointMgr = new CheckpointManager(dataPath);
 builder.Services.AddSingleton(engine);
 builder.Services.AddSingleton(txManager);
+builder.Services.AddSingleton(checkpointMgr);
 
 // Register periodic auto-flush background service
 builder.Services.AddHostedService<AutoFlushBackgroundService>();
@@ -36,11 +38,11 @@ app.UseCors();
 app.MapGet("/", () => Results.Json(new
 {
     engine = "SingamDB",
-    version = "2.0.0",
-    features = new[] { "PrimaryHashIndex", "SecondaryBTreeIndex", "WAL", "MVCC_SnapshotIsolation", "SlottedPages" },
+    version = "3.0.0",
+    features = new[] { "PrimaryHashIndex", "SecondaryBTreeIndex", "CompositeIndex", "VolcanoQueryEngine", "Aggregations", "WAL", "MVCC_SnapshotIsolation", "SlottedPages", "Checkpoints" },
     status = "running",
     port = 7777,
-    message = "SingamDB Server active with B-Tree Indexes, Binary Slotted Pages and MVCC."
+    message = "SingamDB V3.0 Server active with Volcano Query Engine, Composite Indexes, Aggregations and Checkpointing."
 }));
 
 // Health check
@@ -65,9 +67,8 @@ app.MapPost("/api/transactions/begin", (TransactionManager tm) =>
     return Results.Ok(new { txId = tx.TxId, readTimestamp = tx.ReadTimestamp, status = "active" });
 });
 
-app.MapPost("/api/transactions/{txId}/commit", (long txId, TransactionManager tm) =>
+app.MapPost("/api/transactions/{txId}/commit", (long txId, TransactionManager tm, DatabaseEngine dbEngine) =>
 {
-    // Commit transaction
     return Results.Ok(new { txId, status = "committed" });
 });
 
@@ -124,7 +125,7 @@ app.MapGet("/api/databases/{dbName}/collections/{collName}/stats", (string dbNam
 });
 
 // ==========================================
-// INDEXES (Hash & B-Tree)
+// INDEXES (Hash, B-Tree, Composite)
 // ==========================================
 app.MapPost("/api/databases/{dbName}/collections/{collName}/indexes", (string dbName, string collName, [FromBody] IndexRequest request, [FromQuery] bool isBTree = false, DatabaseEngine dbEngine = null!) =>
 {
@@ -139,6 +140,21 @@ app.MapPost("/api/databases/{dbName}/collections/{collName}/indexes", (string db
     db.FlushCollection(collName);
 
     return Results.Ok(new { message = $"Index created on field '{request.Field}'", indexes = coll.GetIndexes() });
+});
+
+app.MapPost("/api/databases/{dbName}/collections/{collName}/indexes/composite", (string dbName, string collName, [FromBody] CompositeIndexRequest request, DatabaseEngine dbEngine) =>
+{
+    if (request.Fields == null || request.Fields.Length < 2)
+    {
+        return Results.BadRequest(new { error = "Composite index requires at least 2 fields." });
+    }
+
+    var db = dbEngine.GetOrCreateDatabase(dbName);
+    var coll = db.GetOrCreateCollection(collName);
+    coll.CreateCompositeIndex(request.Fields);
+    db.FlushCollection(collName);
+
+    return Results.Ok(new { message = $"Composite index created on ({string.Join(", ", request.Fields)})", compositeIndexes = coll.GetCompositeIndexes() });
 });
 
 app.MapDelete("/api/databases/{dbName}/collections/{collName}/indexes/{fieldName}", (string dbName, string collName, string fieldName, DatabaseEngine dbEngine) =>
@@ -262,37 +278,59 @@ app.MapDelete("/api/databases/{dbName}/collections/{collName}/documents/{id}", (
     return Results.NotFound(new { error = $"Document '{id}' not found." });
 });
 
-// Flush
-app.MapPost("/api/databases/{dbName}/collections/{collName}/flush", (string dbName, string collName, DatabaseEngine dbEngine) =>
-{
-    var db = dbEngine.GetOrCreateDatabase(dbName);
-    db.FlushCollection(collName);
-    return Results.Ok(new { message = $"Collection '{collName}' flushed to disk." });
-});
-
-// Query
-app.MapPost("/api/databases/{dbName}/collections/{collName}/query", (string dbName, string collName, [FromBody] Dictionary<string, object> query, [FromQuery] int limit = 100, [FromQuery] int skip = 0, DatabaseEngine dbEngine = null!) =>
-{
-    var db = dbEngine.GetOrCreateDatabase(dbName);
-    var coll = db.GetCollection(collName);
-    if (coll == null) return Results.Ok(new List<Document>());
-
-    var results = coll.Query(query, limit, skip);
-    return Results.Ok(results);
-});
-
-// Explain
-app.MapPost("/api/databases/{dbName}/collections/{collName}/explain", (string dbName, string collName, [FromBody] Dictionary<string, object> query, [FromQuery] int limit = 100, [FromQuery] int skip = 0, DatabaseEngine dbEngine = null!) =>
+// Checkpoint & WAL Truncation
+app.MapPost("/api/databases/{dbName}/collections/{collName}/checkpoint", (string dbName, string collName, CheckpointManager ckpt, DatabaseEngine dbEngine) =>
 {
     var db = dbEngine.GetOrCreateDatabase(dbName);
     var coll = db.GetCollection(collName);
     if (coll == null) return Results.NotFound(new { error = "Collection not found" });
 
-    var explainResult = coll.ExplainQuery(query, limit, skip);
+    var stats = ckpt.CheckpointCollection(dbName, coll, null);
+    return Results.Ok(stats);
+});
+
+// Query (Pipeline: Scan -> Filter -> Sort -> Project -> Limit/Skip)
+app.MapPost("/api/databases/{dbName}/collections/{collName}/query", (string dbName, string collName, [FromBody] Dictionary<string, object> query, [FromQuery] string? sort = null, [FromQuery] bool asc = true, [FromQuery] string? project = null, [FromQuery] int limit = 100, [FromQuery] int skip = 0, DatabaseEngine dbEngine = null!) =>
+{
+    var db = dbEngine.GetOrCreateDatabase(dbName);
+    var coll = db.GetCollection(collName);
+    if (coll == null) return Results.Ok(new List<Document>());
+
+    var projectList = !string.IsNullOrWhiteSpace(project) ? project.Split(',', StringSplitOptions.TrimEntries).ToList() : null;
+    var results = coll.Query(query, sortField: sort, ascending: asc, projectFields: projectList, limit: limit, skip: skip);
+    return Results.Ok(results);
+});
+
+// Aggregate Pipeline
+app.MapPost("/api/databases/{dbName}/collections/{collName}/aggregate", (string dbName, string collName, [FromBody] AggregateRequest request, [FromQuery] string? filter = null, DatabaseEngine dbEngine = null!) =>
+{
+    var db = dbEngine.GetOrCreateDatabase(dbName);
+    var coll = db.GetCollection(collName);
+    if (coll == null) return Results.NotFound(new { error = "Collection not found" });
+
+    Dictionary<string, object>? filterDict = null;
+    if (!string.IsNullOrWhiteSpace(filter))
+    {
+        filterDict = JsonSerializer.Deserialize<Dictionary<string, object>>(filter);
+    }
+
+    var aggResults = coll.Aggregate(request, filterDict);
+    return Results.Ok(aggResults);
+});
+
+// Explain
+app.MapPost("/api/databases/{dbName}/collections/{collName}/explain", (string dbName, string collName, [FromBody] Dictionary<string, object> query, [FromQuery] string? sort = null, [FromQuery] string? project = null, [FromQuery] int limit = 100, [FromQuery] int skip = 0, DatabaseEngine dbEngine = null!) =>
+{
+    var db = dbEngine.GetOrCreateDatabase(dbName);
+    var coll = db.GetCollection(collName);
+    if (coll == null) return Results.NotFound(new { error = "Collection not found" });
+
+    var projectList = !string.IsNullOrWhiteSpace(project) ? project.Split(',', StringSplitOptions.TrimEntries).ToList() : null;
+    var explainResult = coll.ExplainQuery(query, sortField: sort, projectFields: projectList, limit: limit, skip: skip);
     return Results.Ok(explainResult);
 });
 
-// Print Lion ASCII Banner on startup
+// Print ASCII Banner on startup
 PrintBanner();
 
 app.Run();
@@ -310,11 +348,12 @@ static void PrintBanner()
 ");
     Console.ResetColor();
     Console.ForegroundColor = ConsoleColor.Cyan;
-    Console.WriteLine("  SingamDB Server v2.0.0 [Running]");
+    Console.WriteLine("  SingamDB Server v3.0.0 [Running]");
     Console.WriteLine("  Port:         http://0.0.0.0:7777");
     Console.WriteLine("  Storage Path: ./singam_data");
-    Console.WriteLine("  Indexes:      Primary Hash, Secondary Hash, B-Tree Range");
-    Console.WriteLine("  Storage:      Binary 4KB Slotted Pages + WAL + Snapshot");
+    Console.WriteLine("  Engine:       Volcano Pipeline (Scan -> Filter -> Sort -> Project)");
+    Console.WriteLine("  Indexes:      Primary Hash, B-Tree Range, Composite Multi-Key");
+    Console.WriteLine("  Storage:      Binary 4KB Slotted Pages + WAL + Fuzzy Checkpoints");
     Console.WriteLine("  Concurrency:  MVCC Snapshot Isolation");
     Console.WriteLine("===================================================\n");
     Console.ResetColor();
@@ -324,6 +363,11 @@ public class IndexRequest
 {
     public string Field { get; set; } = string.Empty;
     public string? Type { get; set; } = "hash"; // "hash" or "btree"
+}
+
+public class CompositeIndexRequest
+{
+    public string[] Fields { get; set; } = Array.Empty<string>();
 }
 
 public static class ServerStartTime

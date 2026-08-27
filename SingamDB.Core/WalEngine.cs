@@ -11,7 +11,8 @@ public enum WalOpType
     Delete,
     TxBegin,
     TxCommit,
-    TxAbort
+    TxAbort,
+    TxCheckpoint
 }
 
 public class WalEntry
