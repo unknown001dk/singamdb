@@ -1,10 +1,8 @@
 # ==============================================================================
 #  SingamDB Native Windows PowerShell Installer (Zero-Prerequisite)
 #  Usage:
-#    irm https://raw.githubusercontent.com/unknown001dk/singamdb/main/install.ps1 | iex
+#    irm "https://raw.githubusercontent.com/unknown001dk/singamdb/main/install.ps1?$(Get-Random)" | iex
 # ==============================================================================
-
-$ErrorActionPreference = "Stop"
 
 Write-Host @"
    ____  _                            ____  ____  
@@ -31,42 +29,49 @@ Write-Host ""
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 New-Item -ItemType Directory -Force -Path $LibDir | Out-Null
 
-# Check if dotnet is installed; if not, automatically install .NET 8 SDK
-$HasDotnet = $false
+# Locate or Install .NET SDK 8.0
+$DotnetExecutable = "dotnet"
+
+if (Test-Path "$DotnetDir\dotnet.exe") {
+    $DotnetExecutable = "$DotnetDir\dotnet.exe"
+    $env:DOTNET_ROOT = $DotnetDir
+    $env:Path = "$DotnetDir;$env:Path"
+}
+
+$DotnetFound = $false
 try {
-    $v = & dotnet --version 2>$null
-    if ($v) {
-        Write-Host "[OK] Detected .NET: $v" -ForegroundColor Green
-        $HasDotnet = $true
+    $check = & $DotnetExecutable --version 2>$null
+    if ($check) {
+        Write-Host "[OK] Detected .NET SDK: $check" -ForegroundColor Green
+        $DotnetFound = $true
     }
 } catch {}
 
-if (-not $HasDotnet) {
-    if (Test-Path "$DotnetDir\dotnet.exe") {
-        $env:Path = "$DotnetDir;$env:Path"
-        $HasDotnet = $true
-        Write-Host "[OK] Using existing .NET in $DotnetDir" -ForegroundColor Green
-    }
-}
-
-if (-not $HasDotnet) {
-    Write-Host "[*] .NET SDK not found. Automatically installing .NET 8 SDK (portable, no admin required)..." -ForegroundColor Yellow
+if (-not $DotnetFound) {
+    Write-Host "[*] .NET SDK not detected. Downloading portable .NET 8 SDK..." -ForegroundColor Yellow
     $installerScript = "$env:TEMP\dotnet-install.ps1"
     try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
         Invoke-WebRequest -Uri "https://dot.net/v1/dotnet-install.ps1" -OutFile $installerScript -UseBasicParsing
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $installerScript -Channel 8.0 -InstallDir $DotnetDir
-        $env:Path = "$DotnetDir;$env:Path"
         
-        # Add .dotnet to user PATH permanently
+        Write-Host "[*] Installing .NET 8 SDK to $DotnetDir..." -ForegroundColor Yellow
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $installerScript -Channel 8.0 -InstallDir $DotnetDir
+        
+        $env:DOTNET_ROOT = $DotnetDir
+        $env:Path = "$DotnetDir;$env:Path"
+        $DotnetExecutable = "$DotnetDir\dotnet.exe"
+        
+        # Add .dotnet permanently to User environment Path
         $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
         if ($userPath -notlike "*$DotnetDir*") {
             [Environment]::SetEnvironmentVariable("Path", "$DotnetDir;$userPath", "User")
         }
-        Write-Host "[OK] .NET 8 SDK installed successfully!" -ForegroundColor Green
+        
+        Write-Host "[OK] .NET 8 SDK configured successfully!" -ForegroundColor Green
     } catch {
-        Write-Host "[ERROR] Could not auto-install .NET: $_" -ForegroundColor Red
-        Write-Host "Please download .NET 8 from: https://dotnet.microsoft.com/download" -ForegroundColor Yellow
-        exit 1
+        Write-Host "[ERROR] Auto-install failed: $_" -ForegroundColor Red
+        Write-Host "Please download .NET 8 SDK manually from: https://dotnet.microsoft.com/download" -ForegroundColor Yellow
+        return
     }
 }
 
@@ -78,28 +83,29 @@ if ((Test-Path "SingamDB.sln") -and (Test-Path "SingamDB.Server")) {
 
 if ($IsSourceDir) {
     Write-Host "[1/3] Compiling SingamDB from local source..." -ForegroundColor Yellow
-    & dotnet publish SingamDB.Server/SingamDB.Server.csproj -c Release -o "$LibDir\server" --nologo -v q
-    & dotnet publish SingamDB.Cli/SingamDB.Cli.csproj -c Release -o "$LibDir\cli" --nologo -v q
+    & $DotnetExecutable publish SingamDB.Server/SingamDB.Server.csproj -c Release -o "$LibDir\server" --nologo -v q
+    & $DotnetExecutable publish SingamDB.Cli/SingamDB.Cli.csproj -c Release -o "$LibDir\cli" --nologo -v q
 } else {
-    Write-Host "[1/3] Cloning latest SingamDB source from GitHub..." -ForegroundColor Yellow
+    Write-Host "[1/3] Downloading latest SingamDB source from GitHub..." -ForegroundColor Yellow
     try {
         git clone --depth 1 https://github.com/unknown001dk/singamdb.git "$TempDir"
-        & dotnet publish "$TempDir\SingamDB.Server\SingamDB.Server.csproj" -c Release -o "$LibDir\server" --nologo -v q
-        & dotnet publish "$TempDir\SingamDB.Cli\SingamDB.Cli.csproj" -c Release -o "$LibDir\cli" --nologo -v q
+        & $DotnetExecutable publish "$TempDir\SingamDB.Server\SingamDB.Server.csproj" -c Release -o "$LibDir\server" --nologo -v q
+        & $DotnetExecutable publish "$TempDir\SingamDB.Cli\SingamDB.Cli.csproj" -c Release -o "$LibDir\cli" --nologo -v q
         Remove-Item -Recurse -Force "$TempDir" -ErrorAction SilentlyContinue
     } catch {
         Write-Host "[ERROR] Build failed: $_" -ForegroundColor Red
         Remove-Item -Recurse -Force "$TempDir" -ErrorAction SilentlyContinue
-        exit 1
+        return
     }
 }
 
-# Create Windows CMD Wrappers in bin folder
+# Create Windows Launchers in bin folder
 Write-Host "[2/3] Creating Windows executable launchers..." -ForegroundColor Yellow
 
 $serverCmd = @"
 @echo off
 set "PATH=%USERPROFILE%\.dotnet;%PATH%"
+set "DOTNET_ROOT=%USERPROFILE%\.dotnet"
 dotnet "%USERPROFILE%\.singam\lib\server\SingamDB.Server.dll" %*
 "@
 Set-Content -Path "$InstallDir\singam-server.cmd" -Value $serverCmd
@@ -107,6 +113,7 @@ Set-Content -Path "$InstallDir\singam-server.cmd" -Value $serverCmd
 $cliCmd = @"
 @echo off
 set "PATH=%USERPROFILE%\.dotnet;%PATH%"
+set "DOTNET_ROOT=%USERPROFILE%\.dotnet"
 dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.Cli.dll" %*
 "@
 Set-Content -Path "$InstallDir\singam.cmd" -Value $cliCmd
@@ -114,14 +121,16 @@ Set-Content -Path "$InstallDir\singam-cli.cmd" -Value $cliCmd
 
 # Create PowerShell launcher scripts
 $serverPs1 = @"
+`$env:DOTNET_ROOT = "`$env:USERPROFILE\.dotnet"
 `$env:Path = "`$env:USERPROFILE\.dotnet;`$env:Path"
-& dotnet "`$env:USERPROFILE\.singam\lib\server\SingamDB.Server.dll" @args
+& "`$env:USERPROFILE\.dotnet\dotnet.exe" "`$env:USERPROFILE\.singam\lib\server\SingamDB.Server.dll" @args
 "@
 Set-Content -Path "$InstallDir\singam-server.ps1" -Value $serverPs1
 
 $cliPs1 = @"
+`$env:DOTNET_ROOT = "`$env:USERPROFILE\.dotnet"
 `$env:Path = "`$env:USERPROFILE\.dotnet;`$env:Path"
-& dotnet "`$env:USERPROFILE\.singam\lib\cli\SingamDB.Cli.dll" @args
+& "`$env:USERPROFILE\.dotnet\dotnet.exe" "`$env:USERPROFILE\.singam\lib\cli\SingamDB.Cli.dll" @args
 "@
 Set-Content -Path "$InstallDir\singam.ps1" -Value $cliPs1
 
@@ -143,8 +152,8 @@ Write-Host "==================================================================="
 Write-Host " [SUCCESS] SingamDB installed successfully on Windows!" -ForegroundColor Green
 Write-Host "===================================================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "To start using SingamDB immediately:" -ForegroundColor White
-Write-Host "  1. Close and reopen PowerShell (or run `$env:Path = [Environment]::GetEnvironmentVariable('Path','User'))" -ForegroundColor DarkGray
+Write-Host "To start using SingamDB:" -ForegroundColor White
+Write-Host "  1. Close and reopen PowerShell" -ForegroundColor DarkGray
 Write-Host "  2. Start DB Server:      singam-server" -ForegroundColor Cyan
 Write-Host "  3. Open Interactive CLI: singam" -ForegroundColor Cyan
 Write-Host ""
