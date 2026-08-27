@@ -22,3 +22,10 @@ adversarial_wal_test.wal
 ## OS files
 .DS_Store
 Thumbs.db
+
+## Build / Distribution artifacts
+publish/
+node_modules/
+__pycache__/
+*.pyc
+

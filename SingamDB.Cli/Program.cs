@@ -2,7 +2,24 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-var serverUrl = args.Length > 0 ? args[0] : "http://localhost:7777";
+if (args.Length > 0 && (args[0] == "--help" || args[0] == "-h"))
+{
+    Console.WriteLine("SingamDB Interactive CLI Client");
+    Console.WriteLine("Usage:");
+    Console.WriteLine("  singam [server-url]");
+    Console.WriteLine("  singam http://localhost:7777");
+    Console.WriteLine("  singam --help | -h");
+    Console.WriteLine("  singam --version | -v");
+    return;
+}
+
+if (args.Length > 0 && (args[0] == "--version" || args[0] == "-v"))
+{
+    Console.WriteLine("SingamDB CLI v3.0.0");
+    return;
+}
+
+var serverUrl = args.Length > 0 && Uri.TryCreate(args[0], UriKind.Absolute, out _) ? args[0] : "http://localhost:7777";
 var currentDb = "default";
 string? currentCollection = null;
 

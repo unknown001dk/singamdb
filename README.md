@@ -132,16 +132,25 @@ singam_data/
 
 ---
 
-## Quick Start
+## 1-Click Installation & Global Commands
 
-### 1. Prerequisites
-- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- Node.js 18+ (optional, for Node.js driver)
-- Python 3.8+ (optional, for Python driver)
+You can install SingamDB globally on any Mac or Linux machine with **one command**:
 
-### 2. Start the Server Daemon
 ```bash
-./start-server.sh
+./install.sh
+```
+
+Once installed, you can access SingamDB from **any directory** on your computer:
+
+```bash
+singam-server       # Start the SingamDB Server daemon (Ports 7777 & 7778)
+singam              # Open the Interactive SingamDB Shell
+singam-cli          # (Alias) Open the Interactive Shell
+```
+
+To uninstall:
+```bash
+./uninstall.sh
 ```
 *The server starts listening on:*
 - **HTTP REST API**: `http://localhost:7777`

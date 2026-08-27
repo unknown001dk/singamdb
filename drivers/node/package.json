@@ -1,0 +1,21 @@
+{
+  "name": "singamdb",
+  "version": "3.0.0",
+  "description": "Official Node.js and TypeScript client driver for SingamDB high-performance document database with binary wire protocol",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [
+    "singamdb",
+    "database",
+    "nosql",
+    "wire-protocol",
+    "storage-engine",
+    "fast-crc32",
+    "high-performance"
+  ],
+  "author": "SingamDB Core Team",
+  "license": "MIT"
+}

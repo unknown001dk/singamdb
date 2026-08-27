@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  singamdb:
+    build: .
+    container_name: singamdb-server
+    ports:
+      - "7777:7777"   # HTTP REST API
+      - "7778:7778"   # Native TCP Wire Protocol
+    volumes:
+      - singam_data:/app/singam_data
+    restart: unless-stopped
+
+volumes:
+  singam_data:
