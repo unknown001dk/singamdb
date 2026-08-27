@@ -50,6 +50,32 @@ public class Collection : IDisposable
         }
     }
 
+    public void CreateUniqueIndex(string fieldName, bool isBTree = false)
+    {
+        syncLock.EnterWriteLock();
+        try
+        {
+            indexManager.AddUniqueIndex(fieldName, isBTree);
+            foreach (var doc in documents)
+            {
+                indexManager.IndexDocument(doc);
+            }
+        }
+        finally
+        {
+            syncLock.ExitWriteLock();
+        }
+    }
+
+    private readonly List<ForeignKeyConstraint> foreignKeys = new();
+
+    public void AddForeignKey(string fieldName, string targetCollection, string targetField = "_id", OnDeleteAction onDelete = OnDeleteAction.Restrict)
+    {
+        foreignKeys.Add(new ForeignKeyConstraint(fieldName, targetCollection, targetField, onDelete));
+    }
+
+    public List<ForeignKeyConstraint> GetForeignKeys() => foreignKeys;
+
     public void CreateBTreeIndex(string fieldName) => CreateIndex(fieldName, isBTree: true);
 
     public void CreateCompositeIndex(params string[] fieldNames)
@@ -95,12 +121,18 @@ public class Collection : IDisposable
 
     public void Insert(Document doc, long txId = 0)
     {
-        // 1. Write-Ahead Log
-        walEngine?.Append(WalOpType.Insert, doc.Id, doc.Data, txId);
-
         syncLock.EnterWriteLock();
         try
         {
+            var uniqueErr = indexManager.CheckUniqueConstraint(doc, doc.Id);
+            if (uniqueErr != null)
+            {
+                throw new InvalidOperationException(uniqueErr);
+            }
+
+            // 1. Write-Ahead Log
+            walEngine?.Append(WalOpType.Insert, doc.Id, doc.Data, txId);
+
             var existing = indexManager.GetById(doc.Id);
             if (existing != null)
             {

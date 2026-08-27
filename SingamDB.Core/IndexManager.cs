@@ -16,14 +16,50 @@ public class IndexManager
     // Composite Multi-Field Indexes: IndexName -> CompositeIndex
     private readonly ConcurrentDictionary<string, CompositeIndex> compositeIndexes = new(StringComparer.OrdinalIgnoreCase);
 
-    public void AddHashIndex(string fieldName)
+    // Unique Constraint Fields
+    private readonly HashSet<string> uniqueFields = new(StringComparer.OrdinalIgnoreCase);
+
+    public void AddHashIndex(string fieldName, bool isUnique = false)
     {
         secondaryHashIndexes.TryAdd(fieldName, new ConcurrentDictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase));
+        if (isUnique) uniqueFields.Add(fieldName);
     }
 
-    public void AddBTreeIndex(string fieldName)
+    public void AddBTreeIndex(string fieldName, bool isUnique = false)
     {
         bTreeIndexes.TryAdd(fieldName, new BTreeIndex(fieldName));
+        if (isUnique) uniqueFields.Add(fieldName);
+    }
+
+    public void AddUniqueIndex(string fieldName, bool isBTree = false)
+    {
+        if (isBTree) AddBTreeIndex(fieldName, isUnique: true);
+        else AddHashIndex(fieldName, isUnique: true);
+    }
+
+    public bool IsUnique(string fieldName) => uniqueFields.Contains(fieldName);
+
+    public string? CheckUniqueConstraint(Document doc, string? excludeDocId = null)
+    {
+        foreach (var field in uniqueFields)
+        {
+            var val = doc.GetValue(field)?.ToString();
+            if (val != null)
+            {
+                if (secondaryHashIndexes.TryGetValue(field, out var hashIdx) && hashIdx.TryGetValue(val, out var ids))
+                {
+                    lock (ids)
+                    {
+                        var violatingId = ids.FirstOrDefault(id => !string.Equals(id, excludeDocId, StringComparison.OrdinalIgnoreCase));
+                        if (violatingId != null)
+                        {
+                            return $"Unique constraint violation: Duplicate value '{val}' already exists for field '{field}' (Document ID: {violatingId}).";
+                        }
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     public void AddCompositeIndex(params string[] fieldNames)
@@ -34,6 +70,7 @@ public class IndexManager
 
     public bool RemoveIndexField(string fieldName)
     {
+        uniqueFields.Remove(fieldName);
         bool r1 = secondaryHashIndexes.TryRemove(fieldName, out _);
         bool r2 = bTreeIndexes.TryRemove(fieldName, out _);
         bool r3 = compositeIndexes.TryRemove(fieldName, out _);

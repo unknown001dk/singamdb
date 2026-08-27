@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 var serverUrl = args.Length > 0 ? args[0] : "http://localhost:7777";
 var currentDb = "default";
@@ -115,7 +116,7 @@ while (true)
                 else
                 {
                     currentDb = param;
-                    currentCollection = null; // Reset collection when switching database
+                    currentCollection = null;
                     await client.PostAsync($"/api/databases/{currentDb}", null);
                     Console.WriteLine($"Switched to database: '{currentDb}'");
                 }
@@ -166,6 +167,36 @@ while (true)
                 }
                 break;
 
+            case "BATCH":
+                if (string.IsNullOrWhiteSpace(currentCollection))
+                {
+                    Console.WriteLine("[!] No active collection. Use 'COLL <collection_name>' first.");
+                    break;
+                }
+                if (string.IsNullOrWhiteSpace(param))
+                {
+                    Console.WriteLine("Usage: BATCH [{\"name\":\"A\"}, {\"name\":\"B\"}]");
+                    break;
+                }
+
+                var batchDocs = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(param);
+                if (batchDocs == null)
+                {
+                    Console.WriteLine("Invalid JSON array.");
+                    break;
+                }
+
+                var batchResp = await client.PostAsJsonAsync($"/api/databases/{currentDb}/collections/{currentCollection}/batch", batchDocs);
+                if (batchResp.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"[OK] Batch inserted {batchDocs.Count} documents successfully.");
+                }
+                else
+                {
+                    Console.WriteLine($"Batch error: {await batchResp.Content.ReadAsStringAsync()}");
+                }
+                break;
+
             case "FIND":
             case "ALL":
                 if (string.IsNullOrWhiteSpace(currentCollection))
@@ -173,24 +204,41 @@ while (true)
                     Console.WriteLine("[!] No active collection. Use 'COLL <collection_name>' first.");
                     break;
                 }
-                if (string.IsNullOrWhiteSpace(param) || param.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+                await HandleFindQueryAsync(client, currentDb, currentCollection, param, isExplain: false);
+                break;
+
+            case "EXPLAIN":
+                if (string.IsNullOrWhiteSpace(currentCollection))
                 {
-                    var allDocs = await client.GetFromJsonAsync<List<JsonElement>>($"/api/databases/{currentDb}/collections/{currentCollection}/documents");
-                    PrintPrettyJson(JsonSerializer.Serialize(allDocs, new JsonSerializerOptions { WriteIndented = true }));
+                    Console.WriteLine("[!] No active collection. Use 'COLL <collection_name>' first.");
+                    break;
+                }
+                string explainParam = param.StartsWith("FIND ", StringComparison.OrdinalIgnoreCase) ? param.Substring(5).Trim() : param;
+                await HandleFindQueryAsync(client, currentDb, currentCollection, explainParam, isExplain: true);
+                break;
+
+            case "AGGREGATE":
+            case "AGG":
+                if (string.IsNullOrWhiteSpace(currentCollection))
+                {
+                    Console.WriteLine("[!] No active collection. Use 'COLL <collection_name>' first.");
+                    break;
+                }
+                if (string.IsNullOrWhiteSpace(param))
+                {
+                    Console.WriteLine("Usage: AGGREGATE {\"groupBy\": \"city\", \"avg\": \"salary\", \"count\": true}");
+                    break;
+                }
+
+                var aggPayload = JsonSerializer.Deserialize<Dictionary<string, object>>(param);
+                var aggResp = await client.PostAsJsonAsync($"/api/databases/{currentDb}/collections/{currentCollection}/aggregate", aggPayload);
+                if (aggResp.IsSuccessStatusCode)
+                {
+                    PrintPrettyJson(await aggResp.Content.ReadAsStringAsync());
                 }
                 else
                 {
-                    var queryFilter = JsonSerializer.Deserialize<Dictionary<string, object>>(param);
-                    var queryResp = await client.PostAsJsonAsync($"/api/databases/{currentDb}/collections/{currentCollection}/query", queryFilter);
-                    if (queryResp.IsSuccessStatusCode)
-                    {
-                        var queryResult = await queryResp.Content.ReadAsStringAsync();
-                        PrintPrettyJson(queryResult);
-                    }
-                    else
-                    {
-                        Console.WriteLine($"Error: {await queryResp.Content.ReadAsStringAsync()}");
-                    }
+                    Console.WriteLine($"Aggregate error: {await aggResp.Content.ReadAsStringAsync()}");
                 }
                 break;
 
@@ -268,35 +316,6 @@ while (true)
                 }
                 break;
 
-            case "EXPLAIN":
-                if (string.IsNullOrWhiteSpace(currentCollection))
-                {
-                    Console.WriteLine("[!] No active collection. Use 'COLL <collection_name>' first.");
-                    break;
-                }
-                string queryStr = param;
-                if (queryStr.StartsWith("FIND ", StringComparison.OrdinalIgnoreCase))
-                {
-                    queryStr = queryStr.Substring(5).Trim();
-                }
-                if (string.IsNullOrWhiteSpace(queryStr))
-                {
-                    queryStr = "{}";
-                }
-
-                var explainFilter = JsonSerializer.Deserialize<Dictionary<string, object>>(queryStr);
-                var explainResp = await client.PostAsJsonAsync($"/api/databases/{currentDb}/collections/{currentCollection}/explain", explainFilter);
-                if (explainResp.IsSuccessStatusCode)
-                {
-                    var explainJson = await explainResp.Content.ReadAsStringAsync();
-                    PrintPrettyJson(explainJson);
-                }
-                else
-                {
-                    Console.WriteLine($"Explain error: {await explainResp.Content.ReadAsStringAsync()}");
-                }
-                break;
-
             case "INDEX":
                 if (string.IsNullOrWhiteSpace(currentCollection))
                 {
@@ -305,18 +324,89 @@ while (true)
                 }
                 if (string.IsNullOrWhiteSpace(param))
                 {
-                    Console.WriteLine("Usage: INDEX <field_name>");
+                    Console.WriteLine("Usage: INDEX <field_name> [btree] OR INDEX <f1,f2> (Composite)");
                     break;
                 }
 
-                var idxResp = await client.PostAsJsonAsync($"/api/databases/{currentDb}/collections/{currentCollection}/indexes", new { field = param });
-                if (idxResp.IsSuccessStatusCode)
+                if (param.Contains(','))
                 {
-                    Console.WriteLine($"[OK] Index created on '{param}' successfully.");
+                    var fields = param.Split(',', StringSplitOptions.TrimEntries);
+                    var compResp = await client.PostAsJsonAsync($"/api/databases/{currentDb}/collections/{currentCollection}/indexes/composite", new { fields });
+                    if (compResp.IsSuccessStatusCode)
+                    {
+                        Console.WriteLine($"[OK] Composite index created on ({string.Join(", ", fields)}).");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Index error: {await compResp.Content.ReadAsStringAsync()}");
+                    }
                 }
                 else
                 {
-                    Console.WriteLine($"Error: {await idxResp.Content.ReadAsStringAsync()}");
+                    bool isBTree = param.EndsWith(" btree", StringComparison.OrdinalIgnoreCase);
+                    string fieldName = isBTree ? param.Substring(0, param.Length - 6).Trim() : param;
+
+                    var idxResp = await client.PostAsJsonAsync($"/api/databases/{currentDb}/collections/{currentCollection}/indexes?isBTree={isBTree}", new { field = fieldName });
+                    if (idxResp.IsSuccessStatusCode)
+                    {
+                        Console.WriteLine($"[OK] {(isBTree ? "B-Tree Range" : "Secondary Hash")} index created on '{fieldName}'.");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Index error: {await idxResp.Content.ReadAsStringAsync()}");
+                    }
+                }
+                break;
+
+            case "DROP":
+                var dropParts = param.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+                if (dropParts.Length < 2)
+                {
+                    Console.WriteLine("Usage: DROP DB <db_name> OR DROP COLL <coll_name> OR DROP INDEX <field_name>");
+                    break;
+                }
+
+                string dropType = dropParts[0].ToUpperInvariant();
+                string dropTarget = dropParts[1].Trim();
+
+                if (dropType == "DB" || dropType == "DATABASE")
+                {
+                    var r = await client.DeleteAsync($"/api/databases/{dropTarget}");
+                    Console.WriteLine(r.IsSuccessStatusCode ? $"[OK] Database '{dropTarget}' dropped." : $"Error: {await r.Content.ReadAsStringAsync()}");
+                }
+                else if (dropType == "COLL" || dropType == "COLLECTION")
+                {
+                    var r = await client.DeleteAsync($"/api/databases/{currentDb}/collections/{dropTarget}");
+                    Console.WriteLine(r.IsSuccessStatusCode ? $"[OK] Collection '{dropTarget}' dropped." : $"Error: {await r.Content.ReadAsStringAsync()}");
+                    if (currentCollection == dropTarget) currentCollection = null;
+                }
+                else if (dropType == "INDEX")
+                {
+                    if (string.IsNullOrWhiteSpace(currentCollection))
+                    {
+                        Console.WriteLine("[!] No active collection.");
+                        break;
+                    }
+                    var r = await client.DeleteAsync($"/api/databases/{currentDb}/collections/{currentCollection}/indexes/{dropTarget}");
+                    Console.WriteLine(r.IsSuccessStatusCode ? $"[OK] Index on '{dropTarget}' dropped." : $"Error: {await r.Content.ReadAsStringAsync()}");
+                }
+                break;
+
+            case "CHECKPOINT":
+            case "FLUSH":
+                if (string.IsNullOrWhiteSpace(currentCollection))
+                {
+                    Console.WriteLine("[!] No active collection. Use 'COLL <collection_name>' first.");
+                    break;
+                }
+                var ckptResp = await client.PostAsync($"/api/databases/{currentDb}/collections/{currentCollection}/checkpoint", null);
+                if (ckptResp.IsSuccessStatusCode)
+                {
+                    PrintPrettyJson(await ckptResp.Content.ReadAsStringAsync());
+                }
+                else
+                {
+                    Console.WriteLine($"Checkpoint error: {await ckptResp.Content.ReadAsStringAsync()}");
                 }
                 break;
 
@@ -350,6 +440,79 @@ while (true)
     }
 }
 
+static async Task HandleFindQueryAsync(HttpClient client, string db, string coll, string inputParams, bool isExplain)
+{
+    string jsonFilter = "{}";
+    string? sort = null;
+    bool asc = true;
+    string? project = null;
+    int limit = 100;
+    int skip = 0;
+
+    if (!string.IsNullOrWhiteSpace(inputParams) && !inputParams.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+    {
+        // Parse SQL/Fluent CLI clauses: SORT <field> [asc|desc], PROJECT <f1,f2>, LIMIT <n>, SKIP <n>
+        var remaining = inputParams;
+
+        // LIMIT
+        var limitMatch = Regex.Match(remaining, @"\bLIMIT\s+(\d+)", RegexOptions.IgnoreCase);
+        if (limitMatch.Success)
+        {
+            limit = int.Parse(limitMatch.Groups[1].Value);
+            remaining = remaining.Remove(limitMatch.Index, limitMatch.Length).Trim();
+        }
+
+        // SKIP
+        var skipMatch = Regex.Match(remaining, @"\bSKIP\s+(\d+)", RegexOptions.IgnoreCase);
+        if (skipMatch.Success)
+        {
+            skip = int.Parse(skipMatch.Groups[1].Value);
+            remaining = remaining.Remove(skipMatch.Index, skipMatch.Length).Trim();
+        }
+
+        // PROJECT
+        var projMatch = Regex.Match(remaining, @"\bPROJECT\s+([a-zA-Z0-9_, ]+)", RegexOptions.IgnoreCase);
+        if (projMatch.Success)
+        {
+            project = projMatch.Groups[1].Value.Replace(" ", "");
+            remaining = remaining.Remove(projMatch.Index, projMatch.Length).Trim();
+        }
+
+        // SORT
+        var sortMatch = Regex.Match(remaining, @"\bSORT\s+([a-zA-Z0-9_]+)(\s+(ASC|DESC))?", RegexOptions.IgnoreCase);
+        if (sortMatch.Success)
+        {
+            sort = sortMatch.Groups[1].Value;
+            if (sortMatch.Groups[3].Success && sortMatch.Groups[3].Value.Equals("DESC", StringComparison.OrdinalIgnoreCase))
+            {
+                asc = false;
+            }
+            remaining = remaining.Remove(sortMatch.Index, sortMatch.Length).Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(remaining))
+        {
+            jsonFilter = remaining;
+        }
+    }
+
+    var filterObj = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonFilter) ?? new();
+
+    string url = isExplain
+        ? $"/api/databases/{db}/collections/{coll}/explain?sort={sort}&project={project}&limit={limit}&skip={skip}"
+        : $"/api/databases/{db}/collections/{coll}/query?sort={sort}&asc={asc}&project={project}&limit={limit}&skip={skip}";
+
+    var resp = await client.PostAsJsonAsync(url, filterObj);
+    if (resp.IsSuccessStatusCode)
+    {
+        PrintPrettyJson(await resp.Content.ReadAsStringAsync());
+    }
+    else
+    {
+        Console.WriteLine($"Query error: {await resp.Content.ReadAsStringAsync()}");
+    }
+}
+
 static void PrintCliHeader()
 {
     Console.ForegroundColor = ConsoleColor.Yellow;
@@ -362,7 +525,7 @@ static void PrintCliHeader()
                  |___/                             
 ");
     Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine("  SingamDB Interactive Shell v3.0.0");
+    Console.WriteLine("  SingamDB Full-Feature Interactive Shell v3.0.0");
     Console.WriteLine("===================================================\n");
     Console.ResetColor();
 }
@@ -371,24 +534,33 @@ static void PrintHelp()
 {
     Console.WriteLine(@"
 Available Commands:
-----------------------------------------------------------------------
-  SHOW DBS                     List all databases
-  USE <db_name>                Switch active database (e.g. USE production)
-  SHOW COLLECTIONS             List all collections in active database
-  COLL <coll_name>             Switch or create active collection (e.g. COLL cops)
+-------------------------------------------------------------------------------------
+  SHOW DBS                                List all databases
+  USE <db_name>                           Switch active database (e.g. USE production)
+  SHOW COLLECTIONS                        List all collections in active database
+  COLL <coll_name>                        Switch or create collection (e.g. COLL cops)
   
-  INSERT <json>                Insert document (e.g. INSERT {""name"":""Raj"", ""age"":30})
-  FIND [json]                  Query documents (e.g. FIND or FIND {""age"":{""$gt"":25}})
-  GET <id>                     Fetch document by ID via Primary Index
-  UPDATE <id> <json>           Update document by ID
-  DELETE <id>                  Delete document by ID
+  INSERT <json>                           Insert single document
+  BATCH [<json>, <json>]                  Batch insert multiple documents
+  GET <id>                                Fetch document by ID via Primary O(1) Index
+  UPDATE <id> <json>                      Update document fields by ID
+  DELETE <id>                             Delete document by ID
   
-  EXPLAIN FIND <json>          Explain query plan (FULL_SCAN vs INDEX_SCAN)
-  INDEX <field>                Create secondary index on field
-  STATS                        Show current collection document count & indexes
-  CLEAR                        Clear terminal screen
-  EXIT                         Close shell
-----------------------------------------------------------------------
+  FIND [json] [SORT <f> [ASC|DESC]]       Execute full Volcano query pipeline
+       [PROJECT <f1,f2>] [LIMIT n]        e.g. FIND {""age"":{""$gt"":25}} SORT age DESC LIMIT 5
+  
+  EXPLAIN FIND [json] [SORT ...]          Display Volcano Execution Plan & Cost
+  AGGREGATE <json>                        Aggregation pipeline (groupBy, count, avg, sum, min, max)
+  
+  INDEX <field> [btree]                   Create Hash or B-Tree Range Index
+  INDEX <field1,field2>                   Create Composite Multi-Field Index
+  
+  STATS                                   Show collection document counts & index metadata
+  CHECKPOINT                              Execute Fuzzy Checkpoint and WAL Truncation
+  DROP DB <name> | COLL <name> | INDEX <f> Drop database, collection, or index
+  CLEAR                                   Clear terminal screen
+  EXIT                                    Close shell
+-------------------------------------------------------------------------------------
 ");
 }
 

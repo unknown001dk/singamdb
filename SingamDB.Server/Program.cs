@@ -15,9 +15,13 @@ var dataPath = Path.Combine(Directory.GetCurrentDirectory(), "singam_data");
 var engine = new DatabaseEngine(dataPath);
 var txManager = new TransactionManager();
 var checkpointMgr = new CheckpointManager(dataPath);
+var wireServer = new WireProtocolServer(engine, port: 7778);
+wireServer.Start();
+
 builder.Services.AddSingleton(engine);
 builder.Services.AddSingleton(txManager);
 builder.Services.AddSingleton(checkpointMgr);
+builder.Services.AddSingleton(wireServer);
 
 // Register periodic auto-flush background service
 builder.Services.AddHostedService<AutoFlushBackgroundService>();
