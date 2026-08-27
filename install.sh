@@ -2,7 +2,7 @@
 # ==============================================================================
 #  SingamDB Universal Online / Local Installer
 #  Usage:
-#    Online: curl -fsSL https://raw.githubusercontent.com/singamdb/singamdb/main/install.sh | bash
+#    Online: curl -fsSL https://raw.githubusercontent.com/unknown001dk/singamdb/main/install.sh | bash
 #    Local:  ./install.sh
 # ==============================================================================
 
@@ -106,12 +106,27 @@ SINGAM_LIB_DIR="$HOME/.singam/lib/cli"
 exec dotnet "$SINGAM_LIB_DIR/SingamDB.Cli.dll" "$@"
 EOF
 
+    if [ "$TARGET_OS" = "win" ]; then
+        cat << 'EOF' > "$INSTALL_DIR/singam-server.cmd"
+@echo off
+dotnet "%USERPROFILE%\.singam\lib\server\SingamDB.Server.dll" %*
+EOF
+        cat << 'EOF' > "$INSTALL_DIR/singam.cmd"
+@echo off
+dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.Cli.dll" %*
+EOF
+        cat << 'EOF' > "$INSTALL_DIR/singam-cli.cmd"
+@echo off
+dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.Cli.dll" %*
+EOF
+    fi
+
 else
     echo -e "${YELLOW}[1/3] Downloading latest SingamDB binaries from online release...${NC}"
     
     # Release URL pattern
     LATEST_RELEASE="v3.0.0"
-    TAR_URL="https://github.com/singamdb/singamdb/releases/download/${LATEST_RELEASE}/singamdb-${RID}.tar.gz"
+    TAR_URL="https://github.com/unknown001dk/singamdb/releases/download/${LATEST_RELEASE}/singamdb-${RID}.tar.gz"
     
     TEMP_DIR="$(mktemp -d)"
     
@@ -126,13 +141,16 @@ else
             exit 1
         fi
         
-        git clone --depth 1 https://github.com/singamdb/singamdb.git "$TEMP_DIR/singamdb-repo" >/dev/null 2>&1 || {
-            echo -e "${RED}[ERROR] Failed to clone SingamDB repository.${NC}"
-            exit 1
-        }
+        TEMP_BUILD_DIR="$HOME/.singam/tmp_build"
+        rm -rf "$TEMP_BUILD_DIR"
+        mkdir -p "$TEMP_BUILD_DIR"
         
-        dotnet publish "$TEMP_DIR/singamdb-repo/SingamDB.Server/SingamDB.Server.csproj" -c Release -o "$LIB_DIR/server" --nologo -v q
-        dotnet publish "$TEMP_DIR/singamdb-repo/SingamDB.Cli/SingamDB.Cli.csproj" -c Release -o "$LIB_DIR/cli" --nologo -v q
+        echo "Cloning repository..."
+        git clone --depth 1 https://github.com/unknown001dk/singamdb.git "$TEMP_BUILD_DIR"
+        
+        echo "Building SingamDB Server and CLI..."
+        dotnet publish "$TEMP_BUILD_DIR/SingamDB.Server/SingamDB.Server.csproj" -c Release -o "$LIB_DIR/server" --nologo -v q
+        dotnet publish "$TEMP_BUILD_DIR/SingamDB.Cli/SingamDB.Cli.csproj" -c Release -o "$LIB_DIR/cli" --nologo -v q
         
         cat << 'EOF' > "$INSTALL_DIR/singam-server"
 #!/usr/bin/env bash
@@ -145,6 +163,24 @@ EOF
 SINGAM_LIB_DIR="$HOME/.singam/lib/cli"
 exec dotnet "$SINGAM_LIB_DIR/SingamDB.Cli.dll" "$@"
 EOF
+        
+        # On Windows, also create .cmd wrappers
+        if [ "$TARGET_OS" = "win" ]; then
+            cat << 'EOF' > "$INSTALL_DIR/singam-server.cmd"
+@echo off
+dotnet "%USERPROFILE%\.singam\lib\server\SingamDB.Server.dll" %*
+EOF
+            cat << 'EOF' > "$INSTALL_DIR/singam.cmd"
+@echo off
+dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.Cli.dll" %*
+EOF
+            cat << 'EOF' > "$INSTALL_DIR/singam-cli.cmd"
+@echo off
+dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.Cli.dll" %*
+EOF
+        fi
+
+        rm -rf "$TEMP_BUILD_DIR"
     fi
     
     rm -rf "$TEMP_DIR"

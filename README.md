@@ -134,8 +134,19 @@ singam_data/
 
 ## 1-Click Installation & Global Commands
 
-You can install SingamDB globally on any Mac or Linux machine with **one command**:
+### Online 1-Line Installer
 
+**macOS & Linux (Terminal)**:
+```bash
+curl -fsSL https://raw.githubusercontent.com/unknown001dk/singamdb/main/install.sh | bash
+```
+
+**Windows (PowerShell)**:
+```powershell
+irm https://raw.githubusercontent.com/unknown001dk/singamdb/main/install.ps1 | iex
+```
+
+### Local Build Installation
 ```bash
 ./install.sh
 ```
