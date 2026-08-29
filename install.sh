@@ -90,7 +90,7 @@ if [ "$IS_SOURCE_DIR" = true ]; then
     fi
 
     # Build Server and CLI
-    dotnet publish SingamDB.Server/SingamDB.Server.csproj -c Release -o "$LIB_DIR/server" --nologo -v q
+    dotnet publish src/SingamDB.Server/SingamDB.Server.csproj -c Release -o "$LIB_DIR/server" --nologo -v q
     dotnet publish src/SingamDB.CLI/SingamDB.CLI.csproj -c Release -o "$LIB_DIR/cli" --nologo -v q
 
     # Create launcher wrappers
@@ -149,7 +149,7 @@ else
         git clone --depth 1 https://github.com/unknown001dk/singamdb.git "$TEMP_BUILD_DIR"
         
         echo "Building SingamDB Server and CLI..."
-        dotnet publish "$TEMP_BUILD_DIR/SingamDB.Server/SingamDB.Server.csproj" -c Release -o "$LIB_DIR/server" --nologo -v q
+        dotnet publish "$TEMP_BUILD_DIR/src/SingamDB.Server/SingamDB.Server.csproj" -c Release -o "$LIB_DIR/server" --nologo -v q
         dotnet publish "$TEMP_BUILD_DIR/src/SingamDB.CLI/SingamDB.CLI.csproj" -c Release -o "$LIB_DIR/cli" --nologo -v q
         
         cat << 'EOF' > "$INSTALL_DIR/singam-server"

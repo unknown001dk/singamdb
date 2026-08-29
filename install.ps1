@@ -77,19 +77,19 @@ if (-not $DotnetFound) {
 
 # Check if running from local repository
 $IsSourceDir = $false
-if ((Test-Path "SingamDB.sln") -and (Test-Path "SingamDB.Server")) {
+if ((Test-Path "SingamDB.sln") -and (Test-Path "src/SingamDB.Server")) {
     $IsSourceDir = $true
 }
 
 if ($IsSourceDir) {
     Write-Host "[1/3] Compiling SingamDB from local source..." -ForegroundColor Yellow
-    & $DotnetExecutable publish SingamDB.Server/SingamDB.Server.csproj -c Release -o "$LibDir\server" --nologo -v q
+    & $DotnetExecutable publish src/SingamDB.Server/SingamDB.Server.csproj -c Release -o "$LibDir\server" --nologo -v q
     & $DotnetExecutable publish src/SingamDB.CLI/SingamDB.CLI.csproj -c Release -o "$LibDir\cli" --nologo -v q
 } else {
     Write-Host "[1/3] Downloading latest SingamDB source from GitHub..." -ForegroundColor Yellow
     try {
         git clone --depth 1 https://github.com/unknown001dk/singamdb.git "$TempDir"
-        & $DotnetExecutable publish "$TempDir\SingamDB.Server\SingamDB.Server.csproj" -c Release -o "$LibDir\server" --nologo -v q
+        & $DotnetExecutable publish "$TempDir\src\SingamDB.Server\SingamDB.Server.csproj" -c Release -o "$LibDir\server" --nologo -v q
         & $DotnetExecutable publish "$TempDir\src\SingamDB.CLI\SingamDB.CLI.csproj" -c Release -o "$LibDir\cli" --nologo -v q
         Remove-Item -Recurse -Force "$TempDir" -ErrorAction SilentlyContinue
     } catch {

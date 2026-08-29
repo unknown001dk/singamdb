@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\src\SingamDB.Core\SingamDB.Core.csproj" />
-    <ProjectReference Include="..\src\SingamDB.Network\SingamDB.Network.csproj" />
+    <ProjectReference Include="..\..\src\SingamDB.Core\SingamDB.Core.csproj" />
+    <ProjectReference Include="..\..\src\SingamDB.Network\SingamDB.Network.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
