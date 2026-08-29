@@ -13,7 +13,7 @@ Thank you for contributing to SingamDB! We welcome contributions ranging from do
 
 2. **Fork and Clone**:
    ```bash
-   git clone https://github.com/your-username/singamdb.git
+   git clone https://github.com/unknown001dk/singamdb.git
    cd singamdb
    ```
 

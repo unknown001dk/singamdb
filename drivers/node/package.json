@@ -7,6 +7,10 @@
   "scripts": {
     "test": "node test.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/unknown001dk/singamdb.git"
+  },
   "keywords": [
     "singamdb",
     "database",
@@ -16,6 +20,6 @@
     "fast-crc32",
     "high-performance"
   ],
-  "author": "SingamDB Core Team",
+  "author": "unknown001dk",
   "license": "MIT"
 }
