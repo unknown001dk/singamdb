@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>SingamDB.Indexing</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SingamDB.Core\SingamDB.Core.csproj" />
+    <ProjectReference Include="..\SingamDB.Storage\SingamDB.Storage.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -91,7 +91,7 @@ if [ "$IS_SOURCE_DIR" = true ]; then
 
     # Build Server and CLI
     dotnet publish SingamDB.Server/SingamDB.Server.csproj -c Release -o "$LIB_DIR/server" --nologo -v q
-    dotnet publish SingamDB.Cli/SingamDB.Cli.csproj -c Release -o "$LIB_DIR/cli" --nologo -v q
+    dotnet publish src/SingamDB.CLI/SingamDB.CLI.csproj -c Release -o "$LIB_DIR/cli" --nologo -v q
 
     # Create launcher wrappers
     cat << 'EOF' > "$INSTALL_DIR/singam-server"
@@ -103,7 +103,7 @@ EOF
     cat << 'EOF' > "$INSTALL_DIR/singam"
 #!/usr/bin/env bash
 SINGAM_LIB_DIR="$HOME/.singam/lib/cli"
-exec dotnet "$SINGAM_LIB_DIR/SingamDB.Cli.dll" "$@"
+exec dotnet "$SINGAM_LIB_DIR/SingamDB.CLI.dll" "$@"
 EOF
 
     if [ "$TARGET_OS" = "win" ]; then
@@ -113,11 +113,11 @@ dotnet "%USERPROFILE%\.singam\lib\server\SingamDB.Server.dll" %*
 EOF
         cat << 'EOF' > "$INSTALL_DIR/singam.cmd"
 @echo off
-dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.Cli.dll" %*
+dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.CLI.dll" %*
 EOF
         cat << 'EOF' > "$INSTALL_DIR/singam-cli.cmd"
 @echo off
-dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.Cli.dll" %*
+dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.CLI.dll" %*
 EOF
     fi
 
@@ -150,7 +150,7 @@ else
         
         echo "Building SingamDB Server and CLI..."
         dotnet publish "$TEMP_BUILD_DIR/SingamDB.Server/SingamDB.Server.csproj" -c Release -o "$LIB_DIR/server" --nologo -v q
-        dotnet publish "$TEMP_BUILD_DIR/SingamDB.Cli/SingamDB.Cli.csproj" -c Release -o "$LIB_DIR/cli" --nologo -v q
+        dotnet publish "$TEMP_BUILD_DIR/src/SingamDB.CLI/SingamDB.CLI.csproj" -c Release -o "$LIB_DIR/cli" --nologo -v q
         
         cat << 'EOF' > "$INSTALL_DIR/singam-server"
 #!/usr/bin/env bash
@@ -161,7 +161,7 @@ EOF
         cat << 'EOF' > "$INSTALL_DIR/singam"
 #!/usr/bin/env bash
 SINGAM_LIB_DIR="$HOME/.singam/lib/cli"
-exec dotnet "$SINGAM_LIB_DIR/SingamDB.Cli.dll" "$@"
+exec dotnet "$SINGAM_LIB_DIR/SingamDB.CLI.dll" "$@"
 EOF
         
         # On Windows, also create .cmd wrappers
@@ -172,11 +172,11 @@ dotnet "%USERPROFILE%\.singam\lib\server\SingamDB.Server.dll" %*
 EOF
             cat << 'EOF' > "$INSTALL_DIR/singam.cmd"
 @echo off
-dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.Cli.dll" %*
+dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.CLI.dll" %*
 EOF
             cat << 'EOF' > "$INSTALL_DIR/singam-cli.cmd"
 @echo off
-dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.Cli.dll" %*
+dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.CLI.dll" %*
 EOF
         fi
 

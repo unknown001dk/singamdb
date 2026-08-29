@@ -84,13 +84,13 @@ if ((Test-Path "SingamDB.sln") -and (Test-Path "SingamDB.Server")) {
 if ($IsSourceDir) {
     Write-Host "[1/3] Compiling SingamDB from local source..." -ForegroundColor Yellow
     & $DotnetExecutable publish SingamDB.Server/SingamDB.Server.csproj -c Release -o "$LibDir\server" --nologo -v q
-    & $DotnetExecutable publish SingamDB.Cli/SingamDB.Cli.csproj -c Release -o "$LibDir\cli" --nologo -v q
+    & $DotnetExecutable publish src/SingamDB.CLI/SingamDB.CLI.csproj -c Release -o "$LibDir\cli" --nologo -v q
 } else {
     Write-Host "[1/3] Downloading latest SingamDB source from GitHub..." -ForegroundColor Yellow
     try {
         git clone --depth 1 https://github.com/unknown001dk/singamdb.git "$TempDir"
         & $DotnetExecutable publish "$TempDir\SingamDB.Server\SingamDB.Server.csproj" -c Release -o "$LibDir\server" --nologo -v q
-        & $DotnetExecutable publish "$TempDir\SingamDB.Cli\SingamDB.Cli.csproj" -c Release -o "$LibDir\cli" --nologo -v q
+        & $DotnetExecutable publish "$TempDir\src\SingamDB.CLI\SingamDB.CLI.csproj" -c Release -o "$LibDir\cli" --nologo -v q
         Remove-Item -Recurse -Force "$TempDir" -ErrorAction SilentlyContinue
     } catch {
         Write-Host "[ERROR] Build failed: $_" -ForegroundColor Red
@@ -114,7 +114,7 @@ $cliCmd = @"
 @echo off
 set "PATH=%USERPROFILE%\.dotnet;%PATH%"
 set "DOTNET_ROOT=%USERPROFILE%\.dotnet"
-dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.Cli.dll" %*
+dotnet "%USERPROFILE%\.singam\lib\cli\SingamDB.CLI.dll" %*
 "@
 Set-Content -Path "$InstallDir\singam.cmd" -Value $cliCmd
 Set-Content -Path "$InstallDir\singam-cli.cmd" -Value $cliCmd
@@ -130,7 +130,7 @@ Set-Content -Path "$InstallDir\singam-server.ps1" -Value $serverPs1
 $cliPs1 = @"
 `$env:DOTNET_ROOT = "`$env:USERPROFILE\.dotnet"
 `$env:Path = "`$env:USERPROFILE\.dotnet;`$env:Path"
-& "`$env:USERPROFILE\.dotnet\dotnet.exe" "`$env:USERPROFILE\.singam\lib\cli\SingamDB.Cli.dll" @args
+& "`$env:USERPROFILE\.dotnet\dotnet.exe" "`$env:USERPROFILE\.singam\lib\cli\SingamDB.CLI.dll" @args
 "@
 Set-Content -Path "$InstallDir\singam.ps1" -Value $cliPs1
 

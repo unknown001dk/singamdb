@@ -4,9 +4,13 @@ WORKDIR /src
 
 # Copy solution and project files
 COPY SingamDB.sln ./
-COPY SingamDB.Core/SingamDB.Core.csproj SingamDB.Core/
+COPY src/SingamDB.Core/SingamDB.Core.csproj src/SingamDB.Core/
+COPY src/SingamDB.Storage/SingamDB.Storage.csproj src/SingamDB.Storage/
+COPY src/SingamDB.Indexing/SingamDB.Indexing.csproj src/SingamDB.Indexing/
+COPY src/SingamDB.Query/SingamDB.Query.csproj src/SingamDB.Query/
+COPY src/SingamDB.Network/SingamDB.Network.csproj src/SingamDB.Network/
+COPY src/SingamDB.CLI/SingamDB.CLI.csproj src/SingamDB.CLI/
 COPY SingamDB.Server/SingamDB.Server.csproj SingamDB.Server/
-COPY SingamDB.Cli/SingamDB.Cli.csproj SingamDB.Cli/
 COPY SingamDB.Benchmark/SingamDB.Benchmark.csproj SingamDB.Benchmark/
 COPY SingamDB.HttpBenchmark/SingamDB.HttpBenchmark.csproj SingamDB.HttpBenchmark/
 

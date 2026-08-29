@@ -1,7 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
-    <ProjectReference Include="..\SingamDB.Core\SingamDB.Core.csproj" />
+    <ProjectReference Include="..\src\SingamDB.Core\SingamDB.Core.csproj" />
+    <ProjectReference Include="..\src\SingamDB.Storage\SingamDB.Storage.csproj" />
+    <ProjectReference Include="..\src\SingamDB.Indexing\SingamDB.Indexing.csproj" />
+    <ProjectReference Include="..\src\SingamDB.Query\SingamDB.Query.csproj" />
+    <ProjectReference Include="..\src\SingamDB.Network\SingamDB.Network.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SingamDB.Core\SingamDB.Core.csproj" />
+    <ProjectReference Include="..\SingamDB.Storage\SingamDB.Storage.csproj" />
+    <ProjectReference Include="..\SingamDB.Indexing\SingamDB.Indexing.csproj" />
+    <ProjectReference Include="..\SingamDB.Query\SingamDB.Query.csproj" />
+    <ProjectReference Include="..\SingamDB.Network\SingamDB.Network.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>SingamDB.CLI</RootNamespace>
+  </PropertyGroup>
+
+</Project>

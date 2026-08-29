@@ -85,6 +85,8 @@ public class LockManager
         return await request.GrantPromise.Task;
     }
 
+    public void ReleaseLocks(long txId) => ReleaseAllLocks(txId);
+
     public void ReleaseAllLocks(long txId)
     {
         lock (lockManagerLock)

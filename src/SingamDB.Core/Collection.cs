@@ -95,6 +95,8 @@ public class Collection : IDisposable
         }
     }
 
+    public void CreateCompositeIndex(IEnumerable<string> fieldNames) => CreateCompositeIndex(fieldNames.ToArray());
+
     public bool DropIndex(string fieldName)
     {
         syncLock.EnterWriteLock();
@@ -215,6 +217,10 @@ public class Collection : IDisposable
             syncLock.ExitReadLock();
         }
     }
+
+    public Document? FindById(string id) => GetById(id);
+
+    public Document? Update(Document doc) => Update(doc.Id, doc.Data);
 
     public Document? GetSnapshot(string id, long readTimestamp)
     {
@@ -394,6 +400,39 @@ public class Collection : IDisposable
             if (range != null)
             {
                 candidates = candidates.Where(d => EvaluateRange(d.GetValue(key), range));
+                continue;
+            }
+
+            if (value is IDictionary<string, object> dict && dict.TryGetValue("$in", out var inObj))
+            {
+                candidates = candidates.Where(d =>
+                {
+                    var actualVal = d.GetValue(key)?.ToString() ?? "";
+                    if (inObj is System.Collections.IEnumerable inEnum)
+                    {
+                        foreach (var item in inEnum)
+                        {
+                            if (string.Equals(actualVal, item?.ToString() ?? "", StringComparison.OrdinalIgnoreCase))
+                                return true;
+                        }
+                    }
+                    return false;
+                });
+                continue;
+            }
+
+            if (value is JsonElement inElem && inElem.ValueKind == JsonValueKind.Object && inElem.TryGetProperty("$in", out var inArr) && inArr.ValueKind == JsonValueKind.Array)
+            {
+                candidates = candidates.Where(d =>
+                {
+                    var actualVal = d.GetValue(key)?.ToString() ?? "";
+                    foreach (var item in inArr.EnumerateArray())
+                    {
+                        if (string.Equals(actualVal, item.ToString(), StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
+                    return false;
+                });
                 continue;
             }
 

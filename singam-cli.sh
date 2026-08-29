@@ -1,3 +1,3 @@
 #!/bin/bash
 cd "$(dirname "$0")"
-dotnet run --project SingamDB.Cli "$@"
+dotnet run --project src/SingamDB.CLI "$@"

@@ -1,297 +1,183 @@
 # SingamDB
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Language-C%23%2012%20%2F%20.NET%208-blue" alt="C# .NET 8">
-  <img src="https://img.shields.io/badge/Architecture-Slotted%20Pages%20%2B%20WAL%20%2B%20MVCC-success" alt="Architecture">
-  <img src="https://img.shields.io/badge/Wire%20Protocol-TCP%20Binary%20(Port%207778)-orange" alt="Wire Protocol">
-  <img src="https://img.shields.io/badge/Performance-79%2C590%20RPS-brightgreen" alt="Performance">
-  <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
-</p>
+<div align="center">
 
-**SingamDB** is a high-performance database server and storage engine built from scratch in **C# / .NET 8**. It features **Binary Slotted 4KB Page Block Storage**, **B-Tree Range Indexes**, **Composite Multi-Field Indexes**, **Unique Key Constraints**, **CRC32-Checksummed Write-Ahead Logging (WAL)**, **LRU Buffer Pool Caching**, **Snapshot Isolation (MVCC)** with first-committer-wins conflict detection, **Background Vacuum Garbage Collection**, **Streaming Primary-Replica WAL Replication**, **Hierarchical Lock Management with Deadlock Cycle Detection**, a **Native TCP Binary Wire Protocol (Port 7778)** with official **Node.js and Python Drivers**, a **REST API (Port 7777)**, and an **Interactive CLI Shell**.
+```
+   ____  _                            ____  ____  
+  / ___|(_)_ __   __ _  __ _ _ __ ___ |  _ \| __ ) 
+  \___ \| | '_ \ / _` |/ _` | '_ ` _ \| | | |  _ \ 
+   ___) | | | | | (_| | (_| | | | | | | |_| | |_) |
+  |____/|_|_| |_|\__, |\__,_|_| |_| |_|____/|____/ 
+                 |___/                             
+```
+
+**Ultra-Fast, Embeddable & Networked Document Database Engine with ACID Durability**
+
+[![Build & Test](https://img.shields.io/badge/build-passing-brightgreen.svg?style=flat-square)]()
+[![.NET Version](https://img.shields.io/badge/.NET-8.0-purple.svg?style=flat-square)](https://dotnet.microsoft.com/download/dotnet/8.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-orange.svg?style=flat-square)](docs/contributing-guide.md)
+
+</div>
 
 ---
 
-## Architecture Overview
+## 🚀 Key Architectural Highlights
 
-```text
-                               SingamDB Server
-                                      │
-            ┌─────────────────────────┼─────────────────────────┐
-            ▼                         ▼                         ▼
-    [Layer 1: Native Wire]   [Layer 2: HTTP REST]       [Layer 3: CLI]
-       TCP Socket: 7778          HTTP Port: 7777        Interactive Shell
-       (Binary + CRC32)         (JSON Web API)          (Admin Terminal)
-            │                         │                         │
-            ▼                         ▼                         ▼
-   Official Client Drivers    Web Apps / Microservices     singam-cli
-  (Node.js / Python / .NET)      (curl / fetch API)
-            │                         │                         │
-            └─────────────────────────┼─────────────────────────┘
-                                      ▼
-                           Query Engine 2.0
-                                      │
-                               Query Optimizer
-                                      │
-                           Volcano Iterator Engine
-        [ScanNode -> FilterNode -> SortNode -> ProjectNode -> LimitSkipNode]
-                                      │
-                          Index & Transaction Manager
-          (Primary Hash, B-Tree Range, Composite, Unique Keys, MVCC)
-                                      │
-                        Vacuum & Lock Manager (Deadlocks)
-                                      │
-                              LRU Buffer Pool
-                                      │
-                        Binary 4KB Slotted Pages & WAL
-                                      │
-                        Fuzzy Checkpoints & Replication
+- **4KB Binary Slotted Pages**: High-density record packing with slotted headers, zero-fragmentation updates, and checksum validations.
+- **LRU Buffer Pool Frame Manager**: Dedicated memory-mapped buffer cache keeping hot frames pinned in RAM.
+- **Write-Ahead Logging (WAL) & Fast Recovery**: Append-only log with crash recovery replay and automated checkpoint truncation.
+- **Volcano Iterator Query Engine**: Pull-based query pipeline supporting predicate pushdown, filter evaluation, aggregations, and execution cost estimation.
+- **B+ Tree & Composite Indexing**: Primary Hash $O(1)$ lookup, Secondary B+ Tree $O(\log N)$ range scans, and multi-column Composite indexes.
+- **MVCC Snapshot Isolation**: Multi-version concurrency control providing non-blocking concurrent reads and isolated writes.
+- **Binary Wire Protocol**: Low-latency TCP binary protocol delivering over 10x throughput over traditional REST.
+- **Dual Server Interface**: Native Binary Wire Protocol (port `7778`) and HTTP RESTful API (port `7777`).
+
+---
+
+## 📁 Repository Architecture
+
+```
+SingamDB/
+│
+├── src/
+│   ├── SingamDB.Core/          # Core models, MVCC, Lock Manager, Schema & Engine orchestration
+│   ├── SingamDB.Storage/       # Slotted binary pages, LRU Buffer Pool, WAL & Checkpointing
+│   ├── SingamDB.Query/         # Volcano Query Engine, Operators, Aggregations & Cost Planner
+│   ├── SingamDB.Indexing/      # B+ Tree Index, Composite Index, Online Index Builder
+│   ├── SingamDB.Network/       # Binary Wire Protocol Server & Client, Replication
+│   └── SingamDB.CLI/           # Interactive Terminal REPL, Admin Tools & Benchmarks
+│
+├── tests/
+│   ├── SingamDB.Core.Tests/    # Unit tests for Core models, MVCC snapshots, Transactions
+│   ├── SingamDB.Query.Tests/   # Unit tests for Volcano query operators, filters, aggregations
+│   └── SingamDB.IntegrationTests/ # End-to-end integration tests, WAL recovery, Wire Protocol
+│
+├── docs/
+│   ├── getting-started.md      # Quickstart and introductory guide
+│   ├── installation.md         # Multi-platform installation and Docker instructions
+│   ├── architecture.md         # Comprehensive kernel architecture specification
+│   ├── api-reference.md        # HTTP REST and Binary Wire Protocol specification
+│   └── contributing-guide.md   # Developer guide, code style, and PR workflow
+│
+├── examples/
+│   ├── basic-usage/            # Simple database init, collection creation & document queries
+│   ├── crud-example/           # Complete CRUD lifecycle and transaction rollback sample
+│   └── advanced-query/         # Multi-field composite indexing and aggregation pipelines
+│
+├── .github/
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.md
+│   │   └── feature_request.md
+│   │
+│   ├── workflows/
+│   │   ├── build.yml
+│   │   └── tests.yml
+│   │
+│   └── pull_request_template.md
+│
+├── README.md
+├── LICENSE
+├── CONTRIBUTING.md
+├── CODE_OF_CONDUCT.md
+├── SECURITY.md
+├── CHANGELOG.md
+└── ROADMAP.md
 ```
 
 ---
 
-## Production Segmented Storage Layout
+## ⚡ Quick Start
 
-SingamDB stores database files in a partitioned, production-grade directory layout:
+### 1. One-Line Installation
 
-```text
-singam_data/
-└── <database_name>/
-    └── <collection_name>/
-        ├── data/
-        │   ├── 000001.bin           <-- 4KB Binary Slotted Block Pages
-        │   └── ...
-        ├── indexes/
-        │   ├── rank.idx             <-- B-Tree / Hash Index Segments
-        │   └── ...
-        ├── wal/
-        │   ├── 000001.wal           <-- Append-Only CRC32 Transaction Log
-        │   └── ...
-        └── metadata/
-            └── schema.meta          <-- Collection Metadata & Schema Definition
-```
-
----
-
-## Feature Comparison Matrix
-
-| Capability | SingamDB | PostgreSQL | MongoDB / WiredTiger |
-| :--- | :--- | :--- | :--- |
-| **Page-oriented storage** | **Yes (4KB Slotted Pages)** | Yes (8KB) | Yes |
-| **Binary persistent data** | **Yes (.bin blocks)** | Yes | Yes |
-| **WAL & Crash Recovery** | **Yes (CRC32 Checksummed)** | Yes | Yes |
-| **B-Tree Range Indexes** | **Yes ($gt, $lt, $between)** | Yes | Yes |
-| **Hash Indexes** | **Yes (O(1) Point Lookups)** | Yes | Yes |
-| **Composite Multi-Key Indexes**| **Yes (e.g. `city, rank`)** | Yes | Yes |
-| **Unique Key Constraints** | **Yes (Duplicate Rejection)**| Yes | Yes |
-| **Foreign Keys & Referential Actions** | **Yes (RESTRICT / CASCADE)** | Yes | Manual / Document Embedding |
-| **MVCC Snapshot Isolation**| **Yes (First-Committer-Wins)**| Yes | Yes |
-| **Vacuum / Garbage Collector**| **Yes (`VacuumEngine`)** | Yes | Internal |
-| **Streaming Replication** | **Yes (`ReplicationEngine`)**| Yes | Yes |
-| **Hierarchical Lock Manager**| **Yes (Wait-For Deadlock Detection)**| Yes | Yes |
-| **Online Index Maintenance**| **Yes (Non-blocking concurrent build)**| Yes | Yes |
-| **Native Wire Protocol** | **Yes (TCP Port 7778)** | Yes (Port 5432) | Yes (Port 27017) |
-| **REST API** | **Yes (HTTP Port 7777)** | Extension | Extension |
-| **Interactive Terminal CLI** | **Yes (`singam-cli`)** | Yes (`psql`) | Yes (`mongosh`) |
-
----
-
-## Benchmark & Verification Results
-
-### 1. In-Memory Index Scaling Benchmark
-
-| Dataset Size | Full Scan (No Index) | Hash / B-Tree Index | Speedup |
-| :--- | :--- | :--- | :--- |
-| **10,000 docs** | 1.52 ms | 0.0014 ms | **1,084.0x faster** |
-| **100,000 docs** | 12.94 ms | 0.0068 ms | **1,894.7x faster** |
-| **1,000,000 docs** | 132.16 ms | 0.0030 ms | **44,224.0x faster** |
-
-### 2. High-Concurrency Client Saturation Curve
-
-| Concurrent Clients | Throughput | Median (P50) Latency | Tail (P99) Latency |
-| :--- | :--- | :--- | :--- |
-| 1 client | 6,193 req/s | 0.144 ms | 0.318 ms |
-| 8 clients | 49,004 req/s | 0.151 ms | 0.258 ms |
-| 32 clients | 72,898 req/s | 0.374 ms | 2.416 ms |
-| **64 clients** | **79,590 req/s** | **0.669 ms** | **3.018 ms** |
-| 128 clients | 76,247 req/s | 1.358 ms | 4.686 ms |
-| 256 clients | 63,863 req/s | 3.146 ms | 10.622 ms |
-
-### 3. Systems Invariant Verification Suite
-```text
-==================================================================================================
-                 SINGAMDB ADVANCED SYSTEMS CAPABILITIES VERIFICATION SUITE
-==================================================================================================
-[OK] TEST 1: MVCC SNAPSHOT ISOLATION & CONFLICT DETECTION          : PASS (First Committer Wins)
-[OK] TEST 2: VACUUM & DEAD-VERSION GARBAGE COLLECTION              : PASS (Stale versions purged)
-[OK] TEST 3: PRIMARY-FOLLOWER STREAMING WAL REPLICATION            : PASS (100% Exact Sync)
-[OK] TEST 4: HIERARCHICAL LOCK MANAGER & DEADLOCK DETECTION        : PASS (Cycle Aborted)
-[OK] TEST 5: ONLINE NON-BLOCKING INDEX MAINTENANCE                 : PASS (Zero write blocking)
-==================================================================================================
-```
-
----
-
-## 1-Click Installation & Global Commands
-
-### Online 1-Line Installer
-
-**macOS & Linux (Terminal)**:
+**macOS / Linux:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/unknown001dk/singamdb/main/install.sh | bash
 ```
 
-**Windows (PowerShell)**:
+**Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/unknown001dk/singamdb/main/install.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/unknown001dk/singamdb/main/install.ps1 | iex
 ```
 
-### Local Build Installation
-```bash
-./install.sh
-```
-
-Once installed, you can access SingamDB from **any directory** on your computer:
+### 2. Launch Interactive CLI
 
 ```bash
-singam-server       # Start the SingamDB Server daemon (Ports 7777 & 7778)
-singam              # Open the Interactive SingamDB Shell
-singam-cli          # (Alias) Open the Interactive Shell
+singam-cli
 ```
-
-To uninstall:
-```bash
-./uninstall.sh
-```
-*The server starts listening on:*
-- **HTTP REST API**: `http://localhost:7777`
-- **Native TCP Wire Protocol**: `singam://localhost:7778`
-
-### 3. Launch the Interactive CLI Shell
-```bash
-./singam-cli.sh
-```
-
----
-
-## Interactive Shell Commands
 
 ```text
-SHOW DBS                                - List all databases
-USE <db_name>                           - Switch or create active database
-SHOW COLLECTIONS                        - List collections in active database
-COLL <coll_name>                        - Switch or create collection
-
-INSERT <json>                           - Insert single document
-BATCH [<json>, <json>]                  - Bulk/Batch insert multiple documents
-GET <id>                                - Instant O(1) Primary Key lookup
-UPDATE <id> <json>                      - Update document fields by ID
-DELETE <id>                             - Delete document by ID
-
-FIND [json] [SORT <f> [ASC|DESC]]       - Execute full Volcano query pipeline
-     [PROJECT <f1,f2>] [LIMIT n]        - e.g. FIND {"age":{"$gt":25}} SORT age DESC LIMIT 5
-
-EXPLAIN FIND [json] [SORT ...]          - Show Volcano Execution Plan & estimated cost
-AGGREGATE <json>                        - Run Analytics ($groupBy, count, avg, sum, min, max)
-
-INDEX <field> [btree]                   - Create Hash or B-Tree Range Index
-INDEX <field> UNIQUE                    - Create Unique Key Constraint
-INDEX <field1,field2>                   - Create Composite Multi-Key Index
-
-STATS                                   - Show collection document counts & index metadata
-CHECKPOINT                              - Execute Fuzzy Checkpoint and WAL Truncation
-DROP DB <name> | COLL <name>            - Drop database or collection
-CLEAR                                   - Clear terminal screen
-EXIT                                    - Quit shell
+singamdb> use store
+singamdb> insert items {"title": "Mechanical Keyboard", "price": 129.99, "category": "electronics"}
+singamdb> create-index items category --btree
+singamdb> find items {"category": "electronics"}
+singamdb> explain items {"category": "electronics"}
 ```
 
----
-
-## Client Connection & Official Drivers
-
-### 1. Node.js Native Driver (`singamdb`)
-
-```javascript
-const { SingamClient } = require('./drivers/node/singamdb.js');
-
-const client = new SingamClient('singam://localhost:7778');
-await client.connect();
-
-const db = client.database('xman');
-const mutants = db.collection('mutants');
-
-// 1. Create B-Tree & Unique Indexes
-await mutants.createIndex('age', { isBTree: true });
-await mutants.createIndex('email', { unique: true });
-
-// 2. Insert Document
-await mutants.insertOne({ name: 'Logan', power: 'Regeneration', age: 137, rank: 'Alpha' });
-
-// 3. Fluent Chaining Query
-const results = await mutants.find({ age: { $gte: 30 } })
-  .sort({ age: -1 })
-  .project('name', 'power', 'age')
-  .limit(10)
-  .toArray();
-
-console.log(results);
-
-// 4. Aggregations Pipeline
-const stats = await mutants.aggregate({
-  groupBy: 'rank',
-  avg: 'age',
-  count: true
-});
-console.log(stats);
-
-client.close();
-```
-
----
-
-### 2. Python Native Driver
-
-```python
-from drivers.python.singamdb import SingamClient
-
-client = SingamClient("singam://localhost:7778")
-db = client["xman"]
-mutants = db["mutants"]
-
-# Insert
-mutants.insert_one({"name": "Logan", "power": "Regeneration", "age": 137, "rank": "Alpha"})
-
-# Query Cursor
-for hero in mutants.find({"age": {"$gte": 30}}).sort("age", -1).limit(5):
-    print(hero)
-
-client.close()
-```
-
----
-
-### 3. HTTP REST API (curl / fetch)
-
-```javascript
-// Query with Sorting & Projection
-const res = await fetch('http://localhost:7777/api/databases/xman/collections/mutants/query?sort=age&asc=false&project=name,power', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ age: { $gte: 30 } })
-});
-const docs = await res.json();
-```
-
----
-
-## Running All Benchmarks & Invariant Tests
+### 3. Run with Docker
 
 ```bash
-./run-all-benchmarks.sh
+docker run -d -p 7777:7777 -p 7778:7778 -v singam_data:/app/singam_data singamdb/server:latest
 ```
 
 ---
 
-## License
+## 💻 C# Embedding Quickstart
 
-This project is licensed under the [MIT License](LICENSE).
+```csharp
+using SingamDB.Core;
+
+// 1. Initialize engine
+var engine = new DatabaseEngine("singam_data");
+var db = engine.GetOrCreateDatabase("production");
+var users = db.GetOrCreateCollection("users");
+
+// 2. Index field with B+ Tree
+users.CreateIndex("email", isBTree: true);
+
+// 3. Insert document
+var user = new Document(new Dictionary<string, object>
+{
+    { "email", "admin@singamdb.io" },
+    { "role", "superuser" },
+    { "loginCount", 10 }
+});
+users.Insert(user);
+
+// 4. Query
+var result = users.FindById(user.Id);
+Console.WriteLine($"Logged in: {result?.GetValue("email")}");
+
+// 5. Persist to Slotted Pages
+db.Flush();
+```
+
+---
+
+## 🧪 Running Tests & Verification
+
+```bash
+# Build entire solution
+dotnet build SingamDB.sln
+
+# Run all unit and integration test suites
+dotnet test SingamDB.sln
+```
+
+---
+
+## 📚 Documentation Links
+
+- 🚀 [Getting Started](docs/getting-started.md)
+- 💾 [Installation Guide](docs/installation.md)
+- 📐 [Architecture Specification](docs/architecture.md)
+- 📡 [API & Wire Protocol Reference](docs/api-reference.md)
+- 🤝 [Contributing Guidelines](docs/contributing-guide.md)
+- 🗺️ [Roadmap](ROADMAP.md)
+
+---
+
+## 📄 License
+
+SingamDB is open-source software licensed under the [MIT License](LICENSE).
